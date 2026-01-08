@@ -1,0 +1,16 @@
+[package]
+name = "wasmlette-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+wasmlette-blockchain = { path = "../blockchain" }
+wasmtime.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+wat = "1.0"

@@ -1,0 +1,25 @@
+[package]
+name = "wasmlette-node"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "wasmlette"
+path = "src/main.rs"
+
+[dependencies]
+wasmlette-blockchain = { path = "../crates/blockchain" }
+wasmlette-runtime = { path = "../crates/runtime" }
+wasmlette-storage = { path = "../crates/storage" }
+wasmlette-networking = { path = "../crates/networking" }
+
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
