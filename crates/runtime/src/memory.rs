@@ -125,7 +125,8 @@ mod tests {
             "test_read",
             |mut caller: Caller<'_, RuntimeContext>, ptr: i32, len: i32| -> Result<i32> {
                 let memory = MemoryHelper::get_memory(&mut caller, "memory")?;
-                let result = MemoryHelper::read_bytes(&mut caller, &memory, ptr as u32, len as u32)?;
+                let result =
+                    MemoryHelper::read_bytes(&mut caller, &memory, ptr as u32, len as u32)?;
                 Ok(result.len() as i32)
             },
         )?;
@@ -255,15 +256,17 @@ mod tests {
         let module = Module::new(&engine, wat).unwrap();
         let mut linker = Linker::new(&engine);
 
-        linker.func_wrap(
-            "env",
-            "test_get",
-            |mut caller: Caller<'_, RuntimeContext>| -> Result<i32> {
-                let memory = MemoryHelper::get_memory(&mut caller, "memory")?;
-                let size = memory.data(&caller).len();
-                Ok(size as i32)
-            },
-        ).unwrap();
+        linker
+            .func_wrap(
+                "env",
+                "test_get",
+                |mut caller: Caller<'_, RuntimeContext>| -> Result<i32> {
+                    let memory = MemoryHelper::get_memory(&mut caller, "memory")?;
+                    let size = memory.data(&caller).len();
+                    Ok(size as i32)
+                },
+            )
+            .unwrap();
 
         let instance = linker.instantiate(&mut store, &module).unwrap();
         let test_func = instance
@@ -292,15 +295,17 @@ mod tests {
         let module = Module::new(&engine, wat).unwrap();
         let mut linker = Linker::new(&engine);
 
-        linker.func_wrap(
-            "env",
-            "test_get",
-            |mut caller: Caller<'_, RuntimeContext>| -> Result<i32> {
-                // This should fail - no memory export
-                MemoryHelper::get_memory(&mut caller, "memory")?;
-                Ok(0)
-            },
-        ).unwrap();
+        linker
+            .func_wrap(
+                "env",
+                "test_get",
+                |mut caller: Caller<'_, RuntimeContext>| -> Result<i32> {
+                    // This should fail - no memory export
+                    MemoryHelper::get_memory(&mut caller, "memory")?;
+                    Ok(0)
+                },
+            )
+            .unwrap();
 
         let instance = linker.instantiate(&mut store, &module).unwrap();
         let test_func = instance

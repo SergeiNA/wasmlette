@@ -1,5 +1,7 @@
 //! Contract execution orchestration
 
+use crate::constants::RECEIPT_FAILURE_GAS_FEE;
+use crate::gas_fee_calculator::GasCalculator;
 use crate::host_api::register_host_functions;
 use crate::{DeployGasMeter, RuntimeContext, TransferGasMeter, WasmEngine};
 use anyhow::Result;
@@ -38,6 +40,7 @@ impl ContractExecutor {
         // Validate nonce
         let expected_nonce = state.borrow().get_nonce(&tx.sender);
         if tx.nonce != expected_nonce {
+            // TODO we should take fee from the sender's balance for incorrect nonce
             return Ok(TransactionReceipt {
                 tx_hash,
                 success: false,
@@ -54,39 +57,96 @@ impl ContractExecutor {
         // Increment nonce
         state.borrow_mut().increment_nonce(&tx.sender);
 
+        let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
+        let caller_balance = state.borrow().get_balance(&tx.sender);
+        println!(
+            "[TEST:execute_transaction] caller_balance: {}, max_gas_cost {}",
+            caller_balance, max_gas_cost
+        );
+        if caller_balance < max_gas_cost {
+            return Ok(TransactionReceipt {
+                tx_hash,
+                success: false,
+                gas_used: 0,
+                return_data: vec![],
+                error_message: Some(format!(
+                    "Insufficient balance: expected {}, got {}",
+                    max_gas_cost, caller_balance
+                )),
+                contract_address: None,
+            });
+        }
+        // Reserve balance
+        state
+            .borrow_mut()
+            .set_balance(tx.sender.clone(), caller_balance - max_gas_cost);
+
+        {
+            let caller_balance = state.borrow().get_balance(&tx.sender);
+            println!(
+                "[TEST:execute_transaction] caller_balance after gas fee: {}",
+                caller_balance
+            );
+        }
+
         // Execute based on transaction type
         let result = match &tx.kind {
             TransactionKind::Deploy {
                 wasm_code,
                 init_args,
-            } => self.execute_deploy(state, &tx.sender, tx.nonce, wasm_code, init_args),
+            } => self.execute_deploy(state.clone(), &tx.sender, tx.nonce, wasm_code, init_args),
             TransactionKind::Call {
                 contract,
                 method,
                 args,
-            } => self.execute_call(state, &tx.sender, contract, method, args),
+            } => self.execute_call(state.clone(), &tx.sender, contract, method, args),
             TransactionKind::Transfer { to, amount } => {
-                self.execute_transfer(state, &tx.sender, to, *amount)
+                self.execute_transfer(state.clone(), &tx.sender, to, *amount)
             }
         };
 
         match result {
-            Ok((gas_used, return_data, contract_address)) => Ok(TransactionReceipt {
-                tx_hash,
-                success: true,
-                gas_used,
-                return_data,
-                error_message: None,
-                contract_address,
-            }),
-            Err(e) => Ok(TransactionReceipt {
-                tx_hash,
-                success: false,
-                gas_used: 1000, // Consume some gas on error TODO we should calculate it for different calls
-                return_data: vec![],
-                error_message: Some(e.to_string()),
-                contract_address: None,
-            }),
+            Ok((gas_used, return_data, contract_address)) => {
+                let gas_refund = GasCalculator::settle_gas(tx.gas_limit, gas_used, tx.gas_price)?;
+
+                state
+                    .borrow_mut()
+                    .add_balance(tx.sender.clone(), gas_refund.refund);
+
+                {
+                    let caller_balance = state.borrow().get_balance(&tx.sender);
+                    println!(
+                        "[TEST:execute_transaction] caller_balance after gas refund: {}",
+                        caller_balance
+                    );
+                }
+
+                Ok(TransactionReceipt {
+                    tx_hash,
+                    success: true,
+                    gas_used,
+                    return_data,
+                    error_message: None,
+                    contract_address,
+                })
+            }
+            Err(e) => {
+                let gas_refund =
+                    GasCalculator::settle_gas(tx.gas_limit, RECEIPT_FAILURE_GAS_FEE, tx.gas_price)?;
+
+                state
+                    .borrow_mut()
+                    .add_balance(tx.sender.clone(), gas_refund.refund);
+
+                Ok(TransactionReceipt {
+                    tx_hash,
+                    success: false,
+                    gas_used: RECEIPT_FAILURE_GAS_FEE, // Consume some gas on error TODO we should calculate it for different calls
+                    return_data: vec![],
+                    error_message: Some(e.to_string()),
+                    contract_address: None,
+                })
+            }
         }
     }
 
@@ -114,13 +174,8 @@ impl ContractExecutor {
         let mut total_gas_used = gas_meter.operation_cost(wasm_code.len() as u32) as u64;
         println!("[TEST:execute_deploy] deploy gas used: {}", total_gas_used);
         // Try to call init function (it's optional)
-        let init_result = self.execute_call(
-            state,
-            deployer,
-            &contract_address,
-            "init",
-            init_args,
-        )?;
+        let init_result =
+            self.execute_call(state, deployer, &contract_address, "init", init_args)?;
         println!("[TEST:execute_deploy] init gas used: {}", init_result.0);
         total_gas_used += init_result.0;
         println!("[TEST:execute_deploy] total_gas_used: {}", total_gas_used);
@@ -135,7 +190,10 @@ impl ContractExecutor {
         method: &str,
         args: &[u8],
     ) -> Result<(u64, Vec<u8>, Option<Address>)> {
-        println!("[TEST:execute_call] start, caller: {}, method: {}", caller, method);
+        println!(
+            "[TEST:execute_call] start, caller: {}, method: {}",
+            caller, method
+        );
         // Verify contract exists
         if !state.borrow().contract_exists(contract) {
             anyhow::bail!("Contract not found at address");
@@ -305,16 +363,18 @@ impl ContractExecutor {
                             anyhow::bail!("Insufficient args for I32 parameter");
                         }
 
-                        let value = i32::from_le_bytes(args[offset..offset + size_of::<i32>()].try_into()?);
+                        let value =
+                            i32::from_le_bytes(args[offset..offset + size_of::<i32>()].try_into()?);
                         wasm_args.push(wasmtime::Val::I32(value));
-                        offset += size_of::<i32>();;
+                        offset += size_of::<i32>();
                     }
                 }
                 wasmtime::ValType::I64 => {
                     if offset + size_of::<i64>() > args.len() {
                         anyhow::bail!("Insufficient args for I64 parameter");
                     }
-                    let value = i64::from_le_bytes(args[offset..offset + size_of::<i64>()].try_into()?);
+                    let value =
+                        i64::from_le_bytes(args[offset..offset + size_of::<i64>()].try_into()?);
 
                     wasm_args.push(wasmtime::Val::I64(value));
                     offset += size_of::<i64>();
@@ -352,6 +412,7 @@ impl Default for ContractExecutor {
 mod tests {
     use super::*;
     use wasmlette_blockchain::TransactionKind;
+    use wasmlette_tokens::TokenUnit;
 
     #[test]
     fn test_transfer_execution() {
@@ -362,12 +423,17 @@ mod tests {
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
         // Give sender some balance
-        state.borrow_mut().set_balance(from, 1000);
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(1.0));
 
         let tx = Transaction::new(
             from,
             0,
-            TransactionKind::Transfer { to, amount: 100u64 },
+            TransactionKind::Transfer {
+                to,
+                amount: TokenUnit::from_tokens(0.01),
+            },
             100000,
             1,
         );
@@ -376,8 +442,14 @@ mod tests {
 
         assert!(receipt.success);
         assert_eq!(receipt.gas_used, 11000);
-        assert_eq!(state.borrow().get_balance(&from), 900);
-        assert_eq!(state.borrow().get_balance(&to), 100);
+        assert_eq!(
+            state.borrow().get_balance(&from),
+            TokenUnit::from_tokens(0.979)
+        );
+        assert_eq!(
+            state.borrow().get_balance(&to),
+            TokenUnit::from_tokens(0.01)
+        );
     }
 
     #[test]
@@ -409,7 +481,9 @@ mod tests {
         let args = vec![0x2A, 0x00, 0x00, 0x00]; // 42 in little-endian
         let param_types = vec![wasmtime::ValType::I32];
 
-        let result = executor.parse_args(&mut store, &memory, &args, &param_types).unwrap();
+        let result = executor
+            .parse_args(&mut store, &memory, &args, &param_types)
+            .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].unwrap_i32(), 42);
@@ -443,7 +517,9 @@ mod tests {
         let args = vec![0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // 5000 in little-endian
         let param_types = vec![wasmtime::ValType::I64];
 
-        let result = executor.parse_args(&mut store, &memory, &args, &param_types).unwrap();
+        let result = executor
+            .parse_args(&mut store, &memory, &args, &param_types)
+            .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].unwrap_i64(), 5000);
@@ -479,7 +555,9 @@ mod tests {
 
         let param_types = vec![wasmtime::ValType::I32, wasmtime::ValType::I64];
 
-        let result = executor.parse_args(&mut store, &memory, &args, &param_types).unwrap();
+        let result = executor
+            .parse_args(&mut store, &memory, &args, &param_types)
+            .unwrap();
 
         assert_eq!(result.len(), 2);
 
@@ -530,7 +608,9 @@ mod tests {
             wasmtime::ValType::I64,
         ];
 
-        let result = executor.parse_args(&mut store, &memory, &args, &param_types).unwrap();
+        let result = executor
+            .parse_args(&mut store, &memory, &args, &param_types)
+            .unwrap();
 
         assert_eq!(result.len(), 3);
 
@@ -583,7 +663,9 @@ mod tests {
             wasmtime::ValType::I64,
         ];
 
-        let result = executor.parse_args(&mut store, &memory, &args, &param_types).unwrap();
+        let result = executor
+            .parse_args(&mut store, &memory, &args, &param_types)
+            .unwrap();
 
         assert_eq!(result.len(), 3);
 
@@ -625,7 +707,8 @@ mod tests {
         let bytes = executor.serialize_results(&results).unwrap();
 
         assert_eq!(bytes.len(), 8);
-        assert_eq!(bytes, vec![0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // 5000 in little-endian
+        assert_eq!(bytes, vec![0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        // 5000 in little-endian
     }
 
     #[test]
@@ -647,19 +730,14 @@ mod tests {
         let bytes = executor.serialize_results(&results).unwrap();
 
         assert_eq!(bytes.len(), 8);
-        assert_eq!(
-            bytes,
-            vec![0xFD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-        ); // -3 in two's complement
+        assert_eq!(bytes, vec![0xFD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+        // -3 in two's complement
     }
 
     #[test]
     fn test_serialize_results_multiple_values() {
         let executor = ContractExecutor::new().unwrap();
-        let results = vec![
-            wasmtime::Val::I32(100),
-            wasmtime::Val::I64(1000000),
-        ];
+        let results = vec![wasmtime::Val::I32(100), wasmtime::Val::I64(1000000)];
 
         let bytes = executor.serialize_results(&results).unwrap();
 
@@ -678,10 +756,7 @@ mod tests {
     #[test]
     fn test_serialize_results_large_values() {
         let executor = ContractExecutor::new().unwrap();
-        let results = vec![
-            wasmtime::Val::I32(i32::MAX),
-            wasmtime::Val::I64(i64::MAX),
-        ];
+        let results = vec![wasmtime::Val::I32(i32::MAX), wasmtime::Val::I64(i64::MAX)];
 
         let bytes = executor.serialize_results(&results).unwrap();
 
@@ -700,10 +775,7 @@ mod tests {
     #[test]
     fn test_serialize_results_zero_values() {
         let executor = ContractExecutor::new().unwrap();
-        let results = vec![
-            wasmtime::Val::I32(0),
-            wasmtime::Val::I64(0),
-        ];
+        let results = vec![wasmtime::Val::I32(0), wasmtime::Val::I64(0)];
 
         let bytes = executor.serialize_results(&results).unwrap();
 

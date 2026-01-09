@@ -2,9 +2,12 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasmlette_blockchain::{State, Address};
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
+use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::ContractExecutor;
+
+const DEFAULT_GAS_LIMIT: u64 = 1_000_000;
+const DEFAULT_GAS_PRICE: u64 = 1;
 
 /// Test fixture for contract testing
 pub struct TestEnv {
@@ -43,11 +46,12 @@ impl TestEnv {
                 wasm_code: wasm_code.to_vec(),
                 init_args,
             },
-            gas_limit: 10_000_000,
-            gas_price: 1,
+            gas_limit: DEFAULT_GAS_LIMIT,
+            gas_price: DEFAULT_GAS_PRICE,
         };
 
-        let receipt = self.executor
+        let receipt = self
+            .executor
             .execute_transaction(self.state.clone(), &deploy_tx)
             .map_err(|e| format!("Deploy transaction failed: {}", e))?;
 
@@ -55,7 +59,9 @@ impl TestEnv {
             return Err(format!("Deploy failed: {:?}", receipt.error_message));
         }
 
-        receipt.contract_address.ok_or_else(|| "No contract address in receipt".to_string())
+        receipt
+            .contract_address
+            .ok_or_else(|| "No contract address in receipt".to_string())
     }
 
     /// Call a contract method
@@ -75,11 +81,12 @@ impl TestEnv {
                 method: method.to_string(),
                 args,
             },
-            gas_limit: 10_000_000,
-            gas_price: 1,
+            gas_limit: DEFAULT_GAS_LIMIT,
+            gas_price: DEFAULT_GAS_PRICE,
         };
 
-        let receipt = self.executor
+        let receipt = self
+            .executor
             .execute_transaction(self.state.clone(), &call_tx)
             .map_err(|e| format!("Call transaction failed: {}", e))?;
 
@@ -169,10 +176,7 @@ mod tests {
     #[test]
     fn test_args_builder() {
         let alice = Address::from_slice(&[1u8; Address::LENGTH]);
-        let args = ArgsBuilder::new()
-            .add_address(&alice)
-            .add_u64(1000)
-            .build();
+        let args = ArgsBuilder::new().add_address(&alice).add_u64(1000).build();
 
         assert_eq!(args.len(), 28); // 20 + 8
     }

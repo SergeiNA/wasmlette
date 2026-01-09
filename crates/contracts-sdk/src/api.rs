@@ -69,8 +69,8 @@ pub mod storage {
 /// # Returns
 /// Balance in smallest units
 pub mod balance {
-    use crate::ADDRESS_LENGTH;
     use crate::api::get_balance;
+    use crate::ADDRESS_LENGTH;
 
     /// Get the balance of an address
     pub fn get(address: &[u8; ADDRESS_LENGTH]) -> u64 {
@@ -103,8 +103,8 @@ pub mod crypto {
 
 /// Context functions - caller information
 pub mod context {
-    use crate::ADDRESS_LENGTH;
     use super::get_caller as host_get_caller;
+    use crate::ADDRESS_LENGTH;
 
     /// Get the address that called this contract
     ///

@@ -1,4 +1,9 @@
-use anyhow::{anyhow, Result};
+//! Token denomination and conversion utilities
+//!
+//! This crate provides constants and utilities for working with token amounts
+//! in wasmlette blockchain. All balances are stored in the smallest indivisible
+//! units (similar to wei in Ethereum), and this crate handles conversion between
+//! human-readable token amounts and these smallest units.
 
 // ============= Denomination Constants =============
 
@@ -23,18 +28,20 @@ impl TokenUnit {
     ///
     /// # Example
     /// ```
-    /// let units = TokenAmount::from_tokens(1.5);
+    /// use wasmlette_tokens::TokenUnit;
+    /// let units = TokenUnit::from_tokens(1.5);
     /// assert_eq!(units, 1_500_000);
     /// ```
     pub fn from_tokens(tokens: f64) -> u64 {
         (tokens * ONE_TOKEN as f64) as u64
-    }
+    } //TODO add check for overflow
 
     /// Convert smallest units to human-readable tokens
     ///
     /// # Example
     /// ```
-    /// let tokens = TokenAmount::from_units(1_500_000);
+    /// use wasmlette_tokens::TokenUnit;
+    /// let tokens = TokenUnit::from_units(1_500_000);
     /// assert_eq!(tokens, 1.5);
     /// ```
     pub fn from_units(units: u64) -> f64 {
@@ -45,20 +52,35 @@ impl TokenUnit {
     ///
     /// # Example
     /// ```
-    /// let formatted = TokenAmount::format(1_500_000);
-    /// assert_eq!(formatted, "1.500000000");
+    /// use wasmlette_tokens::TokenUnit;
+    /// let formatted = TokenUnit::format(1_500_000);
+    /// assert_eq!(formatted, "1.500000");
     /// ```
     pub fn format(units: u64) -> String {
-        format!("{:.9}", Self::from_units(units))
+        format!("{:.6}", Self::from_units(units))
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_token_amount_conversion() {
         assert_eq!(TokenUnit::from_tokens(1.5), 1_500_000);
         assert_eq!(TokenUnit::from_units(1_500_000), 1.5);
-        assert_eq!(TokenUnit::format(1_500_000), "1.500000000");
+    }
+
+    #[test]
+    fn test_token_format() {
+        assert_eq!(TokenUnit::format(1_500_000), "1.500000");
+        assert_eq!(TokenUnit::format(1_000_000), "1.000000");
+        assert_eq!(TokenUnit::format(1), "0.000001");
+    }
+
+    #[test]
+    fn test_one_token_constant() {
+        assert_eq!(ONE_TOKEN, 1_000_000);
+        assert_eq!(TokenUnit::from_tokens(1.0), ONE_TOKEN);
     }
 }

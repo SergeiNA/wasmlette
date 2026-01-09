@@ -1,9 +1,11 @@
 //! Simple Token contract integration tests
 
-use crate::common::{TestEnv, ArgsBuilder};
+use crate::common::{ArgsBuilder, TestEnv};
 use wasmlette_blockchain::Address;
+use wasmlette_runtime::TokenUnit;
 
-const TOKEN_WASM: &[u8] = include_bytes!("../../../target/wasm32-unknown-unknown/release/simple_token.wasm");
+const TOKEN_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32-unknown-unknown/release/simple_token.wasm");
 
 fn get_balance_key(address: &Address) -> Vec<u8> {
     let mut key = b"balance".to_vec();
@@ -13,57 +15,64 @@ fn get_balance_key(address: &Address) -> Vec<u8> {
 
 #[test]
 fn test_token_deploy() {
+    let init_supply_contract_token = 10_000_000u64;
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let initial_supply = 1_000_000u64;
     let init_args = ArgsBuilder::new()
-        .add_u64(initial_supply)
+        .add_u64(init_supply_contract_token)
         .build();
 
-    let token = env.deploy_contract(deployer, 0, TOKEN_WASM, init_args)
+    let token = env
+        .deploy_contract(deployer, 0, TOKEN_WASM, init_args)
         .expect("Deploy should succeed");
 
     assert!(env.contract_exists(&token));
 
     // Verify total supply
+    // TODO should change when gas fee applys. for now we don't change it.
     let supply = env.get_storage_u64(token, b"total_supply").unwrap();
-    assert_eq!(supply, initial_supply);
+    assert_eq!(supply, init_supply_contract_token);
 
-    // Verify total supply
+    // Verify total transfers
     let transfer_count = env.get_storage_u64(token, b"transfer_count").unwrap();
     assert_eq!(transfer_count, 0);
 
     // Verify deployer has all tokens
-    let balance = env.get_storage_u64(token, &get_balance_key(&deployer)).unwrap();
-    assert_eq!(balance, initial_supply);
+    let contract_balance = env
+        .get_storage_u64(token, &get_balance_key(&deployer))
+        .unwrap();
+    assert_eq!(contract_balance, init_supply_contract_token);
+
+    // Verify deployer balance as reduced by gas fee
+    let deployer_balance = env.get_balance(&deployer);
+    assert_eq!(deployer_balance, 9866679);
 }
 
 #[test]
 fn test_token_transfer() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
-    let bob = env.create_account(2, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
 
     // Deploy with Alice as owner
     let initial_supply = 1_000_000u64;
-    let init_args = ArgsBuilder::new()
-        .add_u64(initial_supply)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(initial_supply).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Alice transfers 5000 tokens to Bob
-    let transfer_args = ArgsBuilder::new()
-        .add_address(&bob)
-        .add_u64(5000)
-        .build();
+    let transfer_args = ArgsBuilder::new().add_address(&bob).add_u64(5000).build();
 
     env.call_contract(alice, 1, token, "transfer", transfer_args)
         .expect("Transfer should succeed");
 
     // Verify balances
-    let alice_balance = env.get_storage_u64(token, &get_balance_key(&alice)).unwrap();
+    let alice_balance = env
+        .get_storage_u64(token, &get_balance_key(&alice))
+        .unwrap();
     let bob_balance = env.get_storage_u64(token, &get_balance_key(&bob)).unwrap();
 
     assert_eq!(alice_balance, 995_000);
@@ -77,19 +86,19 @@ fn test_token_transfer() {
 #[test]
 fn test_token_transfer_insufficient_balance() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
-    let bob = env.create_account(2, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
 
-    let init_args = ArgsBuilder::new()
-        .add_u64(1_000)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Try to transfer more than Alice has
     let transfer_args = ArgsBuilder::new()
         .add_address(&bob)
-        .add_u64(2_000)  // More than 1000!
+        .add_u64(2_000) // More than 1000!
         .build();
 
     // This should fail with error code -3 (insufficient balance)
@@ -98,91 +107,103 @@ fn test_token_transfer_insufficient_balance() {
     let result = env.call_contract(alice, 1, token, "transfer", transfer_args);
 
     // For now, just verify balances didn't change
-    let alice_balance = env.get_storage_u64(token, &get_balance_key(&alice)).unwrap();
+    let alice_balance = env
+        .get_storage_u64(token, &get_balance_key(&alice))
+        .unwrap();
     assert_eq!(alice_balance, 1_000, "Alice's balance should be unchanged");
 }
 
 #[test]
 fn test_token_transfer_zero_amount() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
-    let bob = env.create_account(2, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
 
-    let init_args = ArgsBuilder::new()
-        .add_u64(1_000)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Try to transfer 0 tokens (should return error -1)
-    let transfer_args = ArgsBuilder::new()
-        .add_address(&bob)
-        .add_u64(0)
-        .build();
+    let transfer_args = ArgsBuilder::new().add_address(&bob).add_u64(0).build();
 
     let _result = env.call_contract(alice, 1, token, "transfer", transfer_args);
 
     // Verify balances didn't change
-    let alice_balance = env.get_storage_u64(token, &get_balance_key(&alice)).unwrap();
+    let alice_balance = env
+        .get_storage_u64(token, &get_balance_key(&alice))
+        .unwrap();
     assert_eq!(alice_balance, 1_000);
 }
 
 #[test]
 fn test_token_self_transfer() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let init_args = ArgsBuilder::new()
-        .add_u64(1_000)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Try to transfer to self (should return error -2)
-    let transfer_args = ArgsBuilder::new()
-        .add_address(&alice)
-        .add_u64(100)
-        .build();
+    let transfer_args = ArgsBuilder::new().add_address(&alice).add_u64(100).build();
 
     let _result = env.call_contract(alice, 1, token, "transfer", transfer_args);
 
     // Verify balance didn't change
-    let alice_balance = env.get_storage_u64(token, &get_balance_key(&alice)).unwrap();
+    let alice_balance = env
+        .get_storage_u64(token, &get_balance_key(&alice))
+        .unwrap();
     assert_eq!(alice_balance, 1_000);
 }
 
 #[test]
 fn test_token_multiple_transfers() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
-    let bob = env.create_account(2, 10_000_000);
-    let charlie = env.create_account(3, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
+    let charlie = env.create_account(3, TokenUnit::from_tokens(10.0));
 
-    let init_args = ArgsBuilder::new()
-        .add_u64(10_000)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(10_000).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Alice -> Bob: 3000
     let args1 = ArgsBuilder::new().add_address(&bob).add_u64(3000).build();
-    env.call_contract(alice, 1, token, "transfer", args1).unwrap();
+    env.call_contract(alice, 1, token, "transfer", args1)
+        .unwrap();
 
     // Alice -> Charlie: 2000
-    let args2 = ArgsBuilder::new().add_address(&charlie).add_u64(2000).build();
-    env.call_contract(alice, 2, token, "transfer", args2).unwrap();
+    let args2 = ArgsBuilder::new()
+        .add_address(&charlie)
+        .add_u64(2000)
+        .build();
+    env.call_contract(alice, 2, token, "transfer", args2)
+        .unwrap();
 
     // Bob -> Charlie: 1000
-    let args3 = ArgsBuilder::new().add_address(&charlie).add_u64(1000).build();
+    let args3 = ArgsBuilder::new()
+        .add_address(&charlie)
+        .add_u64(1000)
+        .build();
     env.call_contract(bob, 0, token, "transfer", args3).unwrap();
 
     // Verify final balances
-    let alice_balance = env.get_storage_u64(token, &get_balance_key(&alice)).unwrap();
+    let alice_balance = env
+        .get_storage_u64(token, &get_balance_key(&alice))
+        .unwrap();
     let bob_balance = env.get_storage_u64(token, &get_balance_key(&bob)).unwrap();
-    let charlie_balance = env.get_storage_u64(token, &get_balance_key(&charlie)).unwrap();
+    let charlie_balance = env
+        .get_storage_u64(token, &get_balance_key(&charlie))
+        .unwrap();
 
-    assert_eq!(alice_balance, 5_000);   // 10000 - 3000 - 2000
-    assert_eq!(bob_balance, 2_000);     // 3000 - 1000
+    assert_eq!(alice_balance, 5_000); // 10000 - 3000 - 2000
+    assert_eq!(bob_balance, 2_000); // 3000 - 1000
     assert_eq!(charlie_balance, 3_000); // 2000 + 1000
 
     // Verify total supply unchanged
@@ -193,22 +214,25 @@ fn test_token_multiple_transfers() {
 #[test]
 fn test_token_query_balance() {
     let env = TestEnv::new();
-    let alice = env.create_account(1, 10_000_000);
-    let bob = env.create_account(2, 10_000_000);
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
 
-    let init_args = ArgsBuilder::new()
-        .add_u64(1_000)
-        .build();
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
 
-    let token = env.deploy_contract(alice, 0, TOKEN_WASM, init_args).unwrap();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
 
     // Query Bob's balance (should be 0)
-    let bob_balance = env.get_storage_u64(token, &get_balance_key(&bob)).unwrap_or(0);
+    let bob_balance = env
+        .get_storage_u64(token, &get_balance_key(&bob))
+        .unwrap_or(0);
     assert_eq!(bob_balance, 0);
 
     // Transfer some to Bob
     let transfer_args = ArgsBuilder::new().add_address(&bob).add_u64(500).build();
-    env.call_contract(alice, 1, token, "transfer", transfer_args).unwrap();
+    env.call_contract(alice, 1, token, "transfer", transfer_args)
+        .unwrap();
 
     // Query Bob's balance again
     let bob_balance = env.get_storage_u64(token, &get_balance_key(&bob)).unwrap();

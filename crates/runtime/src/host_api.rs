@@ -3,8 +3,8 @@
 use crate::gas_meter::{GetBalanceGasMeter, HashGasMeter, StoreGasMeter, StoreOperationType};
 use crate::RuntimeContext;
 use anyhow::Result;
-use wasmtime::Linker;
 use wasmlette_blockchain::Address;
+use wasmtime::Linker;
 
 /// Register all host functions with the linker
 pub fn register_host_functions(linker: &mut Linker<RuntimeContext>) -> Result<()> {
@@ -331,7 +331,10 @@ fn register_context_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 *context.caller_address.as_bytes()
             };
 
-            println!("[TEST:register_context_functions] caller address: {:?}", caller_address);
+            println!(
+                "[TEST:register_context_functions] caller address: {:?}",
+                caller_address
+            );
 
             // Write caller address to WASM memory
             let _ = crate::memory::MemoryHelper::write_bytes(

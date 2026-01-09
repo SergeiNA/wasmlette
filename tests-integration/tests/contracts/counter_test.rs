@@ -1,24 +1,28 @@
 //! Counter contract integration tests
 
-use crate::common::{TestEnv, ArgsBuilder};
+use crate::common::{ArgsBuilder, TestEnv};
 use wasmlette_blockchain::Address;
+use wasmlette_runtime::TokenUnit;
 
-const COUNTER_WASM: &[u8] = include_bytes!("../../../target/wasm32-unknown-unknown/release/counter.wasm");
+const COUNTER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32-unknown-unknown/release/counter.wasm");
 
 #[test]
 fn test_counter_deploy_and_init() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
     // Deploy counter contract
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Verify contract exists
     assert!(env.contract_exists(&contract));
 
     // Verify initial count is 0 (init sets it)
-    let count = env.get_storage_u64(contract, b"count")
+    let count = env
+        .get_storage_u64(contract, b"count")
         .expect("Count should be initialized");
     assert_eq!(count, 0, "Initial count should be 0");
 }
@@ -26,10 +30,11 @@ fn test_counter_deploy_and_init() {
 #[test]
 fn test_counter_increment() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
     // Deploy
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Increment
@@ -44,9 +49,10 @@ fn test_counter_increment() {
 #[test]
 fn test_counter_multiple_increments() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Increment 5 times
@@ -63,14 +69,17 @@ fn test_counter_multiple_increments() {
 #[test]
 fn test_counter_decrement() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Increment twice
-    env.call_contract(deployer, 1, contract, "increment", vec![]).unwrap();
-    env.call_contract(deployer, 2, contract, "increment", vec![]).unwrap();
+    env.call_contract(deployer, 1, contract, "increment", vec![])
+        .unwrap();
+    env.call_contract(deployer, 2, contract, "increment", vec![])
+        .unwrap();
 
     // Decrement once
     env.call_contract(deployer, 3, contract, "decrement", vec![])
@@ -84,9 +93,10 @@ fn test_counter_decrement() {
 #[test]
 fn test_counter_set_count() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Set count to 42
@@ -102,16 +112,19 @@ fn test_counter_set_count() {
 #[test]
 fn test_counter_get_count() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Increment
-    env.call_contract(deployer, 1, contract, "increment", vec![]).unwrap();
+    env.call_contract(deployer, 1, contract, "increment", vec![])
+        .unwrap();
 
     // Get count (returns u64)
-    let result = env.call_contract(deployer, 2, contract, "get_count", vec![])
+    let result = env
+        .call_contract(deployer, 2, contract, "get_count", vec![])
         .expect("get_count should succeed");
 
     // Note: Need to handle return value properly
@@ -123,9 +136,10 @@ fn test_counter_get_count() {
 #[test]
 fn test_counter_cannot_decrement_below_zero() {
     let env = TestEnv::new();
-    let deployer = env.create_account(1, 10_000_000);
+    let deployer = env.create_account(1, TokenUnit::from_tokens(10.0));
 
-    let contract = env.deploy_contract(deployer, 0, COUNTER_WASM, vec![])
+    let contract = env
+        .deploy_contract(deployer, 0, COUNTER_WASM, vec![])
         .expect("Deploy should succeed");
 
     // Try to decrement from 0 (should be no-op)

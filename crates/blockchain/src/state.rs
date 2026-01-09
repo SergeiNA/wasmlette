@@ -20,7 +20,7 @@ pub struct ContractInfo {
 /// Global state manager
 pub struct State {
     /// Account balances in units of smallest denomination (micro-tokens)
-    balances: HashMap<Address, u64>, 
+    balances: HashMap<Address, u64>,
 
     /// Deployed contracts
     contracts: HashMap<Address, ContractInfo>,
@@ -53,6 +53,12 @@ impl State {
     /// Set the balance of an account
     pub fn set_balance(&mut self, address: Address, balance: u64) {
         self.balances.insert(address, balance);
+    }
+
+    /// Add to the balance of an account
+    pub fn add_balance(&mut self, address: Address, add_balance: u64) {
+        let current_balance = self.get_balance(&address);
+        self.balances.insert(address, current_balance + add_balance);
     }
 
     /// Transfer tokens between accounts
@@ -164,8 +170,8 @@ mod tests {
 
         assert_eq!(state.get_balance(&addr), 0u64);
 
-        state.set_balance(addr, 100u64);
-        assert_eq!(state.get_balance(&addr), 100u64);
+        state.set_balance(addr, 100_000u64);
+        assert_eq!(state.get_balance(&addr), 100_000u64);
     }
 
     #[test]
@@ -174,12 +180,12 @@ mod tests {
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
-        state.set_balance(from, 100u64);
+        state.set_balance(from, 100_000u64);
 
-        state.transfer(from, to, 30u64).unwrap();
+        state.transfer(from, to, 30_000u64).unwrap();
 
-        assert_eq!(state.get_balance(&from), 70u64);
-        assert_eq!(state.get_balance(&to), 30u64);
+        assert_eq!(state.get_balance(&from), 70_000u64);
+        assert_eq!(state.get_balance(&to), 30_000u64);
     }
 
     #[test]
@@ -190,7 +196,7 @@ mod tests {
 
         state.set_balance(from, 50u64);
 
-        let result = state.transfer(from, to, 100u64);
+        let result = state.transfer(from, to, 100_000u64);
         assert!(result.is_err());
     }
 

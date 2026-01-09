@@ -3,6 +3,7 @@ use std::rc::Rc;
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{transaction::Address, State};
 use wasmlette_runtime::ContractExecutor;
+use wasmlette_tokens::TokenUnit;
 
 #[test]
 fn test_deploy_and_call_contract() {
@@ -15,7 +16,10 @@ fn test_deploy_and_call_contract() {
 
     // Create deploy transaction
     let deployer = Address::from_slice(&[0x01; Address::LENGTH]);
-    state.borrow_mut().set_balance(deployer, 1_000_000u64); // Give deployer some balance
+    let deployer_balance_tokens = 2.0;
+    state
+        .borrow_mut()
+        .set_balance(deployer, TokenUnit::from_tokens(deployer_balance_tokens)); // Give deployer some balance
 
     let deploy_tx = Transaction {
         sender: deployer,

@@ -5,7 +5,7 @@
 
 #![no_std]
 
-use wasmlette_contracts_sdk::{storage, context, ADDRESS_LENGTH};
+use wasmlette_contracts_sdk::{context, storage, ADDRESS_LENGTH};
 
 // Storage keys
 const TOTAL_SUPPLY_KEY: &[u8] = b"total_supply";

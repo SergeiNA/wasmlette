@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::{RuntimeContext, WasmEngine};
+use wasmlette_tokens::TokenUnit;
 use wasmtime::Linker;
 
 #[test]
@@ -84,8 +85,14 @@ fn test_balance_host_functions() {
     let bob = Address::from_slice(&[0x02; Address::LENGTH]);
     let zero_balance = Address::from_slice(&[0x03; Address::LENGTH]);
 
-    state.borrow_mut().set_balance(alice, 1_000_000u64);
-    state.borrow_mut().set_balance(bob, 500_000u64);
+    let alice_balance_tokens = 1.0;
+    let bob_balance_tokens = 0.5;
+    state
+        .borrow_mut()
+        .set_balance(alice, TokenUnit::from_tokens(alice_balance_tokens));
+    state
+        .borrow_mut()
+        .set_balance(bob, TokenUnit::from_tokens(bob_balance_tokens));
     // zero_balance intentionally has no balance (0)
 
     // Deploy contract
@@ -133,7 +140,7 @@ fn test_balance_host_functions() {
         .unwrap();
 
     let alice_balance = results[0].unwrap_i64() as u64;
-    assert_eq!(alice_balance, 1_000_000);
+    assert_eq!(alice_balance, TokenUnit::from_tokens(alice_balance_tokens));
 
     // Test 2: Check Bob's balance
     memory.write(&mut store, 0, bob.as_bytes()).unwrap();
@@ -142,7 +149,7 @@ fn test_balance_host_functions() {
         .unwrap();
 
     let bob_balance = results[0].unwrap_i64() as u64;
-    assert_eq!(bob_balance, 500_000);
+    assert_eq!(bob_balance, TokenUnit::from_tokens(bob_balance_tokens));
 
     // Test 3: Check address with no balance
     memory
@@ -271,13 +278,7 @@ fn test_get_caller_host_functions() {
     // Get the get caller function
     let hash_func = instance.get_func(&mut store, "test_get_caller").unwrap();
     hash_func
-        .call(
-            &mut store,
-            &[
-                wasmtime::Val::I32(output_offset),
-            ],
-            &mut [],
-        )
+        .call(&mut store, &[wasmtime::Val::I32(output_offset)], &mut [])
         .unwrap();
 
     let mut caller_address = vec![0u8; Address::LENGTH];
