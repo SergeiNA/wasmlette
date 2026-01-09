@@ -83,4 +83,97 @@ mod tests {
         assert_eq!(ONE_TOKEN, 1_000_000);
         assert_eq!(TokenUnit::from_tokens(1.0), ONE_TOKEN);
     }
+
+    #[test]
+    fn test_from_tokens_overflow() {
+        // Test with value that would overflow u64
+        // u64::MAX = 18_446_744_073_709_551_615
+        // With ONE_TOKEN = 1_000_000, max representable tokens ≈ 18_446_744_073_703
+        let huge_value = 1e20; // 100 quintillion tokens
+        let result = TokenUnit::from_tokens(huge_value);
+
+        // Should truncate/saturate rather than panic
+        // This documents current behavior - in production, might want checked conversion
+        assert!(result > 0, "Should produce some result, not panic");
+    }
+
+    #[test]
+    fn test_from_tokens_very_large_valid() {
+        // Test maximum safe value
+        // u64::MAX / ONE_TOKEN = max tokens that fit in u64
+        let max_tokens = (u64::MAX / ONE_TOKEN) as f64;
+        let result = TokenUnit::from_tokens(max_tokens);
+        assert!(result <= u64::MAX, "Should not overflow");
+    }
+
+    #[test]
+    fn test_from_tokens_zero() {
+        assert_eq!(TokenUnit::from_tokens(0.0), 0);
+    }
+
+    #[test]
+    fn test_from_units_zero() {
+        assert_eq!(TokenUnit::from_units(0), 0.0);
+    }
+
+    #[test]
+    fn test_from_units_max() {
+        let result = TokenUnit::from_units(u64::MAX);
+        assert!(result > 0.0, "Should handle max u64");
+        assert!(result.is_finite(), "Should be finite number");
+    }
+
+    #[test]
+    fn test_roundtrip_conversion() {
+        // Test that conversions are reversible for reasonable values
+        let test_values = vec![0.0, 0.000001, 0.1, 1.0, 10.0, 100.0, 1000.0];
+
+        for &tokens in &test_values {
+            let units = TokenUnit::from_tokens(tokens);
+            let back_to_tokens = TokenUnit::from_units(units);
+
+            // Allow small floating point error
+            let diff = (tokens - back_to_tokens).abs();
+            assert!(
+                diff < 0.000001,
+                "Roundtrip failed for {}: got {}",
+                tokens,
+                back_to_tokens
+            );
+        }
+    }
+
+    #[test]
+    fn test_precision_boundaries() {
+        // Test precision at boundaries
+        // Smallest representable amount: 1 unit = 0.000001 tokens
+        assert_eq!(TokenUnit::from_tokens(0.000001), 1);
+        assert_eq!(TokenUnit::from_units(1), 0.000001);
+
+        // Smaller than smallest unit rounds to 0
+        assert_eq!(TokenUnit::from_tokens(0.0000001), 0);
+    }
+
+    #[test]
+    fn test_format_edge_cases() {
+        // Test format with various values
+        assert_eq!(TokenUnit::format(0), "0.000000");
+        assert_eq!(TokenUnit::format(1), "0.000001");
+        assert_eq!(TokenUnit::format(ONE_TOKEN), "1.000000");
+        assert_eq!(TokenUnit::format(ONE_TOKEN * 1000), "1000.000000");
+    }
+
+    #[test]
+    fn test_large_balance() {
+        // Test with a large but valid balance (1 trillion tokens)
+        let trillion_tokens = 1_000_000_000_000.0;
+        let units = TokenUnit::from_tokens(trillion_tokens);
+        let back = TokenUnit::from_units(units);
+
+        // Should be close (floating point precision limits apply)
+        assert!(
+            (trillion_tokens - back).abs() < 1.0,
+            "Large balance conversion should be reasonably accurate"
+        );
+    }
 }

@@ -99,4 +99,102 @@ mod tests {
         assert_eq!(settlement.actual_cost, 60_000_000);
         assert_eq!(settlement.refund, 40_000_000);
     }
+
+    #[test]
+    fn test_zero_gas_price() {
+        // Free transactions (gas_price = 0)
+        let result = GasCalculator::max_cost(1_000_000, 0).unwrap();
+        assert_eq!(result, 0, "Zero gas price should result in zero cost");
+
+        let settlement = GasCalculator::settle_gas(1_000_000, 500_000, 0).unwrap();
+        assert_eq!(settlement.actual_cost, 0);
+        assert_eq!(settlement.refund, 0);
+    }
+
+    #[test]
+    fn test_zero_gas_limit() {
+        // Transaction with zero gas limit
+        let result = GasCalculator::max_cost(0, 1_000).unwrap();
+        assert_eq!(result, 0, "Zero gas limit should result in zero cost");
+
+        let settlement = GasCalculator::settle_gas(0, 0, 1_000).unwrap();
+        assert_eq!(settlement.actual_cost, 0);
+        assert_eq!(settlement.refund, 0);
+    }
+
+    #[test]
+    fn test_all_gas_used() {
+        // Transaction uses exactly the gas limit
+        let settlement = GasCalculator::settle_gas(100_000, 100_000, 1_000).unwrap();
+
+        assert_eq!(settlement.actual_cost, 100_000_000);
+        assert_eq!(settlement.refund, 0, "No refund when all gas is used");
+    }
+
+    #[test]
+    fn test_gas_used_exceeds_limit() {
+        // Edge case: gas_used > gas_limit (shouldn't happen in practice)
+        // This should error because refund calculation would underflow
+        let result = GasCalculator::settle_gas(100_000, 150_000, 1_000);
+
+        assert!(
+            result.is_err(),
+            "Should error when gas_used > gas_limit (refund would underflow)"
+        );
+    }
+
+    #[test]
+    fn test_max_cost_near_overflow() {
+        // Test values near u64::MAX
+        let max_safe_gas_limit = u64::MAX / 1_000;
+        let result = GasCalculator::max_cost(max_safe_gas_limit, 1_000);
+        assert!(result.is_ok(), "Should handle large but valid values");
+
+        // This should overflow
+        let result_overflow = GasCalculator::max_cost(max_safe_gas_limit + 1, 1_000);
+        assert!(result_overflow.is_err(), "Should detect overflow");
+    }
+
+    #[test]
+    fn test_settle_gas_overflow() {
+        // Test settlement with values that would overflow
+        let result = GasCalculator::settle_gas(u64::MAX, u64::MAX / 2, 2);
+        assert!(result.is_err(), "Should detect overflow in settlement");
+    }
+
+    #[test]
+    fn test_actual_cost_overflow() {
+        // gas_used * gas_price overflows
+        let result = GasCalculator::settle_gas(u64::MAX, u64::MAX, 2);
+        assert!(
+            result.is_err(),
+            "Should detect overflow in actual cost calculation"
+        );
+    }
+
+    #[test]
+    fn test_high_gas_price() {
+        // Very high gas price
+        let settlement = GasCalculator::settle_gas(100, 50, 1_000_000).unwrap();
+
+        assert_eq!(settlement.actual_cost, 50_000_000);
+        assert_eq!(settlement.refund, 50_000_000);
+    }
+
+    #[test]
+    fn test_settlement_consistency() {
+        // Verify actual_cost + refund = max_cost
+        let gas_limit = 1_000_000;
+        let gas_used = 750_000;
+        let gas_price = 500;
+
+        let settlement = GasCalculator::settle_gas(gas_limit, gas_used, gas_price).unwrap();
+        let max_cost = GasCalculator::max_cost(gas_limit, gas_price).unwrap();
+
+        assert_eq!(
+            settlement.actual_cost + settlement.refund,
+            max_cost,
+            "actual_cost + refund should equal max_cost"
+        );
+    }
 }

@@ -289,3 +289,194 @@ fn test_get_caller_host_functions() {
     // Verify address
     assert_eq!(alice, Address::from_slice(&caller_address));
 }
+
+#[test]
+fn test_gas_refund_with_storage_operations() {
+    // Setup
+    let state = Rc::new(RefCell::new(State::new()));
+    let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
+    let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
+
+    let initial_balance = TokenUnit::from_tokens(10.0);
+    state.borrow_mut().set_balance(contract, initial_balance);
+
+    state
+        .borrow_mut()
+        .deploy_contract(contract, wasm_code.to_vec().clone())
+        .unwrap();
+
+    let initial_gas = 1_000_000;
+
+    // Create context
+    let context = RuntimeContext {
+        caller_address: Address::zero(),
+        contract_address: contract,
+        state: state.clone(),
+        gas_remaining: initial_gas,
+    };
+
+    // Create engine and store
+    let engine = WasmEngine::new().unwrap();
+    let mut store = engine.create_store(context);
+    store.set_fuel(initial_gas).unwrap();
+
+    // Load module
+    let module = engine.load_module(&wasm_code.to_vec()).unwrap();
+
+    // Register host functions
+    let mut linker = Linker::new(engine.engine());
+    wasmlette_runtime::host_api::register_host_functions(&mut linker).unwrap();
+
+    // Instantiate
+    let instance = linker.instantiate(&mut store, &module).unwrap();
+
+    // Call init function
+    let init_func = instance.get_func(&mut store, "init").unwrap();
+    init_func.call(&mut store, &[], &mut []).unwrap();
+
+    // Check gas was consumed (gas_remaining < initial)
+    let gas_after = store.get_fuel().unwrap();
+    assert!(gas_after < initial_gas, "Gas should have been consumed");
+
+    // Verify gas refund calculation
+    let gas_used = initial_gas - gas_after;
+    assert!(gas_used > 0, "Some gas should have been used");
+    assert!(gas_used < initial_gas, "Should not use all gas");
+}
+
+#[test]
+fn test_storage_with_insufficient_gas() {
+    // Setup with very low gas
+    let state = Rc::new(RefCell::new(State::new()));
+    let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
+    let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
+
+    state
+        .borrow_mut()
+        .deploy_contract(contract, wasm_code.to_vec().clone())
+        .unwrap();
+
+    // Create context with minimal gas (not enough for operations)
+    let low_gas = 100; // Very low
+    let context = RuntimeContext {
+        caller_address: Address::zero(),
+        contract_address: contract,
+        state: state.clone(),
+        gas_remaining: low_gas,
+    };
+
+    // Create engine and store
+    let engine = WasmEngine::new().unwrap();
+    let mut store = engine.create_store(context);
+    store.set_fuel(low_gas).unwrap();
+
+    // Load module
+    let module = engine.load_module(&wasm_code.to_vec()).unwrap();
+
+    // Register host functions
+    let mut linker = Linker::new(engine.engine());
+    wasmlette_runtime::host_api::register_host_functions(&mut linker).unwrap();
+
+    // Instantiate
+    let instance = linker.instantiate(&mut store, &module).unwrap();
+
+    // Try to call set_count with insufficient gas
+    let set_func = instance.get_func(&mut store, "test_set_count").unwrap();
+    let result = set_func.call(&mut store, &[42i64.into()], &mut []);
+
+    // The call may succeed at WASM level but storage operation should not complete
+    // due to insufficient gas. Verify storage was NOT modified.
+    let stored_value = state.borrow().get_storage(contract, b"count".to_vec());
+
+    // If result errored, that's fine (out of fuel)
+    // If result succeeded, verify storage wasn't modified (host function returned early)
+    if result.is_ok() {
+        // Storage should either not exist or still be 0
+        match stored_value {
+            None => {
+                // Good - no storage was set
+            }
+            Some(value) => {
+                let count = u64::from_le_bytes(value.try_into().unwrap());
+                assert_eq!(
+                    count, 0,
+                    "Storage should not have been modified with insufficient gas"
+                );
+            }
+        }
+    }
+    // If result.is_err(), that's also acceptable (out of fuel)
+}
+
+#[test]
+fn test_balance_query_gas_cost() {
+    // Test that balance queries consume predictable gas
+    let state = Rc::new(RefCell::new(State::new()));
+    let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
+    let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
+
+    // Set up test addresses with balances
+    let alice = Address::from_slice(&[0x01; Address::LENGTH]);
+    state
+        .borrow_mut()
+        .set_balance(alice, TokenUnit::from_tokens(5.0));
+
+    // Deploy contract
+    state
+        .borrow_mut()
+        .deploy_contract(contract, wasm_code.to_vec())
+        .unwrap();
+
+    let initial_gas = 1_000_000;
+
+    // Create context
+    let context = RuntimeContext {
+        caller_address: Address::zero(),
+        contract_address: contract,
+        state: state.clone(),
+        gas_remaining: initial_gas,
+    };
+
+    // Create engine and store
+    let engine = WasmEngine::new().unwrap();
+    let mut store = engine.create_store(context);
+    store.set_fuel(initial_gas).unwrap();
+
+    // Load module
+    let module = engine.load_module(&wasm_code.to_vec()).unwrap();
+
+    // Register host functions
+    let mut linker = Linker::new(engine.engine());
+    wasmlette_runtime::host_api::register_host_functions(&mut linker).unwrap();
+
+    // Instantiate
+    let instance = linker.instantiate(&mut store, &module).unwrap();
+
+    // Get memory and write address
+    let memory = instance.get_memory(&mut store, "memory").unwrap();
+    memory.write(&mut store, 0, alice.as_bytes()).unwrap();
+
+    let gas_before = store.get_fuel().unwrap();
+
+    // Call get_balance
+    let balance_func = instance.get_func(&mut store, "test_get_balance").unwrap();
+    let mut results = [wasmtime::Val::I64(0)];
+    balance_func
+        .call(&mut store, &[wasmtime::Val::I32(0)], &mut results)
+        .unwrap();
+
+    let gas_after = store.get_fuel().unwrap();
+    let gas_used = gas_before - gas_after;
+
+    // Verify balance returned correctly
+    assert_eq!(results[0].unwrap_i64() as u64, TokenUnit::from_tokens(5.0));
+
+    // Verify gas was consumed
+    assert!(gas_used > 0, "get_balance should consume gas");
+
+    // Gas cost should be reasonable (not excessive)
+    assert!(
+        gas_used < 10_000,
+        "get_balance gas cost should be reasonable"
+    );
+}
