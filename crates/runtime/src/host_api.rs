@@ -5,6 +5,7 @@ use crate::RuntimeContext;
 use anyhow::Result;
 use wasmlette_blockchain::Address;
 use wasmtime::Linker;
+use tracing::info;
 
 /// Register all host functions with the linker
 pub fn register_host_functions(linker: &mut Linker<RuntimeContext>) -> Result<()> {
@@ -67,8 +68,8 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                         let gas_cost = gas_meter
                             .operation_cost(key_len as u32, StoreOperationType::Get)
                             as u64;
-                        println!("[TEST:get_storage (key no found)] Gas cost: {}", gas_cost);
-                        println!(
+                        info!("[TEST:get_storage (key no found)] Gas cost: {}", gas_cost);
+                        info!(
                             "[TEST:get_storage (key no found)] Gas remaining: {}",
                             context.gas_remaining
                         );
@@ -79,7 +80,7 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                             return -1;
                         }
                         context.gas_remaining -= gas_cost;
-                        println!(
+                        info!(
                             "[TEST:get_storage (key no found)] Gas remaining: {}",
                             context.gas_remaining
                         );
@@ -96,9 +97,9 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 let data_len = key_len as u32 + value_len.max(output_capacity) as u32;
                 let gas_cost = gas_meter.operation_cost(data_len, StoreOperationType::Get) as u64;
 
-                println!("[TEST:get_storage] Gas cost: {}", gas_cost);
+                info!("[TEST:get_storage] Gas cost: {}", gas_cost);
                 let context = caller.data_mut();
-                println!(
+                info!(
                     "[TEST:get_storage] Gas remaining: {}",
                     context.gas_remaining
                 );
@@ -109,7 +110,7 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                     return -1;
                 }
                 context.gas_remaining -= gas_cost;
-                println!(
+                info!(
                     "[TEST:get_storage] Gas remaining: {}",
                     context.gas_remaining
                 );
@@ -148,9 +149,9 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 let data_len = key_len as u32 + val_len as u32;
                 let gas_cost = gas_meter.operation_cost(data_len, StoreOperationType::Set) as u64;
 
-                println!("[TEST:set_storage] Gas cost: {}", gas_cost);
+                info!("[TEST:set_storage] Gas cost: {}", gas_cost);
                 let context = caller.data_mut();
-                println!(
+                info!(
                     "[TEST:set_storage] Gas remaining: {}",
                     context.gas_remaining
                 );
@@ -159,7 +160,7 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                     return;
                 }
                 context.gas_remaining -= gas_cost;
-                println!(
+                info!(
                     "[TEST:set_storage] Gas remaining: {}",
                     context.gas_remaining
                 );
@@ -179,7 +180,7 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 Ok(k) => k,
                 Err(_) => return,
             };
-            println!("[TEST:set_storage] Key: {:?}", key);
+            info!("[TEST:set_storage] Key: {:?}", key);
 
             // Read value from WASM memory
             let value = match crate::memory::MemoryHelper::read_bytes(
@@ -191,7 +192,7 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 Ok(k) => k,
                 Err(_) => return,
             };
-            println!("[TEST:set_storage] Value: {:?}", value);
+            info!("[TEST:set_storage] Value: {:?}", value);
 
             // Get state and contract address from context
             let context = caller.data();
@@ -331,7 +332,7 @@ fn register_context_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 *context.caller_address.as_bytes()
             };
 
-            println!(
+            info!(
                 "[TEST:register_context_functions] caller address: {:?}",
                 caller_address
             );

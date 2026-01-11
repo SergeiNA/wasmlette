@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 hex = "0.4"
 bincode = "2.0.1"
+ed25519-dalek = { version = "2.1", features = ["serde"] }
+signature = "2.2"
+rand.workspace = true
 
 [dev-dependencies]
-rand.workspace = true

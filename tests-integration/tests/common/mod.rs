@@ -2,12 +2,28 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Once;
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::ContractExecutor;
 
 const DEFAULT_GAS_LIMIT: u64 = 1_000_000;
 const DEFAULT_GAS_PRICE: u64 = 1;
+
+static INIT: Once = Once::new();
+
+/// Initialize tracing for tests (call once)
+pub fn init_tracing() {
+    INIT.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(tracing::Level::INFO.into()),
+            )
+            .init();
+    });
+}
 
 /// Test fixture for contract testing
 pub struct TestEnv {

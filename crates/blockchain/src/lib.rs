@@ -19,6 +19,7 @@ pub mod utils;
 // Re-export main types
 pub use block::Block;
 pub use builder::BlockBuilder;
+pub use crypto::{Keypair, TransactionSignature, verify_signature};
 pub use errors::BlockchainError;
 pub use manager::BlockchainManager;
 pub use state::State;

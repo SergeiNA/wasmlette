@@ -7,6 +7,7 @@
 //! - Blockchain state persistence
 //! - Multi-contract interactions
 
+use crate::common::init_tracing;
 use wasmlette_node::WasmletteNode;
 use wasmlette_runtime::TokenUnit;
 
@@ -41,6 +42,7 @@ fn build_transfer_args(to: &wasmlette_blockchain::Address, amount: u64) -> Vec<u
 
 #[test]
 fn test_node_contract_deploy() {
+    init_tracing();
     let mut node = WasmletteNode::new().unwrap();
 
     let deployer = node.create_account(1, TokenUnit::from_tokens(10.0));

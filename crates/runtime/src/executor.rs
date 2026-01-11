@@ -12,6 +12,8 @@ use wasmlette_blockchain::transaction::Address;
 use wasmlette_blockchain::utils::generate_contract_address;
 use wasmlette_blockchain::{State, Transaction, TransactionKind, TransactionReceipt};
 use wasmtime::Linker;
+use tracing::info;
+use tracing::error;
 
 /// Default contract execution gas limit
 const MAX_CONTRACT_FUEL: u64 = 1_000_000;
@@ -36,7 +38,10 @@ impl ContractExecutor {
         tx: &Transaction,
     ) -> Result<TransactionReceipt> {
         let tx_hash = tx.hash();
-
+info!(
+    "[TEST:execute_transaction] tx.hash(): {:?}, tx.sender: {}",
+    tx_hash, tx.sender
+);
         // Validate transaction
         // Return error if nonce is invalid or insufficient balance
         self.validate_transaction(tx, &state)?;
@@ -49,12 +54,12 @@ impl ContractExecutor {
             TransactionKind::Deploy {
                 wasm_code,
                 init_args,
-            } => self.execute_deploy(state.clone(), &tx.sender, tx.nonce, wasm_code, init_args),
+            } => self.execute_deploy(state.clone(), &tx.sender, tx.nonce, tx.gas_limit, wasm_code, init_args),
             TransactionKind::Call {
                 contract,
                 method,
                 args,
-            } => self.execute_call(state.clone(), &tx.sender, contract, method, args),
+            } => self.execute_call(state.clone(), &tx.sender, contract, tx.gas_limit, method, args),
             TransactionKind::Transfer { to, amount } => {
                 self.execute_transfer(state.clone(), &tx.sender, to, *amount)
             }
@@ -62,6 +67,10 @@ impl ContractExecutor {
 
         match result {
             Ok((gas_used, return_data, contract_address)) => {
+                info!(
+                    "[TEST:execute_transaction] success, gas_used: {}, tx_hash: {:?}, tx.sender: {}",
+                    gas_used, tx_hash, tx.sender
+                );
                 let gas_refund = GasCalculator::settle_gas(tx.gas_limit, gas_used, tx.gas_price)?;
 
                 state
@@ -70,7 +79,7 @@ impl ContractExecutor {
 
                 {
                     let caller_balance = state.borrow().get_balance(&tx.sender);
-                    println!(
+                    info!(
                         "[TEST:execute_transaction] caller_balance after gas refund: {}",
                         caller_balance
                     );
@@ -88,6 +97,11 @@ impl ContractExecutor {
             Err(e) => {
                 let gas_refund =
                     GasCalculator::settle_gas(tx.gas_limit, RECEIPT_FAILURE_GAS_FEE, tx.gas_price)?;
+
+                info!(
+                    "[TEST:execute_transaction] fail, gas_used: {}, tx_hash: {:?}, tx.sender: {}",
+                    RECEIPT_FAILURE_GAS_FEE, tx_hash, tx.sender
+                );
 
                 state
                     .borrow_mut()
@@ -109,6 +123,10 @@ impl ContractExecutor {
         // Validate nonce
         let expected_nonce = state.borrow().get_nonce(&tx.sender);
         if tx.nonce != expected_nonce {
+            error!(
+            "[TEST:execute_transaction] validate_transaction fail, tx.nonce: {} != expected_nonce: {}",
+            tx.nonce, expected_nonce
+            );
             return anyhow::bail!(
                 "Invalid nonce: expected {}, got {}",
                 expected_nonce,
@@ -120,11 +138,15 @@ impl ContractExecutor {
         // Check balance
         let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
         let caller_balance = state.borrow().get_balance(&tx.sender);
-        println!(
+        info!(
             "[TEST:execute_transaction] caller_balance: {}, max_gas_cost {}",
             caller_balance, max_gas_cost
         );
         if caller_balance < max_gas_cost {
+            error!(
+                "[TEST:execute_transaction] validate_transaction fail, caller_balance: {} < max_gas_cost: {}",
+            caller_balance, max_gas_cost
+            );
             return anyhow::bail!(
                 "Insufficient balance: expected {}, got {}",
                 max_gas_cost,
@@ -138,7 +160,7 @@ impl ContractExecutor {
 
         {
             let caller_balance = state.borrow().get_balance(&tx.sender);
-            println!(
+            info!(
                 "[TEST:execute_transaction] caller_balance after gas fee: {}",
                 caller_balance
             );
@@ -151,10 +173,11 @@ impl ContractExecutor {
         state: Rc<RefCell<State>>,
         deployer: &Address,
         nonce: u64,
+        gas_limit: u64,
         wasm_code: &[u8],
         init_args: &[u8],
     ) -> Result<(u64, Vec<u8>, Option<Address>)> {
-        println!("[TEST:execute_deploy] start, deployer: {}", deployer);
+        info!("[TEST:execute_deploy] start, deployer: {}", deployer);
         // Load and validate module
         let _ = self.engine.load_module(wasm_code)?;
 
@@ -168,14 +191,14 @@ impl ContractExecutor {
 
         let gas_meter = DeployGasMeter::new();
         let mut total_gas_used = gas_meter.operation_cost(wasm_code.len() as u32) as u64;
-        println!("[TEST:execute_deploy] deploy gas used: {}", total_gas_used);
+        info!("[TEST:execute_deploy] deploy gas used: {}", total_gas_used);
         // Try to call init function (it's optional)
         let init_result =
-            self.execute_call(state, deployer, &contract_address, "init", init_args)?;
-        println!("[TEST:execute_deploy] init gas used: {}", init_result.0);
+            self.execute_call(state, deployer, &contract_address, gas_limit, "init", init_args)?;
+        info!("[TEST:execute_deploy] init gas used: {}", init_result.0);
         total_gas_used += init_result.0;
-        println!("[TEST:execute_deploy] total_gas_used: {}", total_gas_used);
-        Ok((total_gas_used, vec![], Some(contract_address))) // TODO move 1000 to constant
+        info!("[TEST:execute_deploy] total_gas_used: {}", total_gas_used);
+        Ok((total_gas_used, vec![], Some(contract_address)))
     }
 
     fn execute_call(
@@ -183,10 +206,11 @@ impl ContractExecutor {
         state: Rc<RefCell<State>>,
         caller: &Address,
         contract: &Address,
+        gas_limit: u64,
         method: &str,
         args: &[u8],
     ) -> Result<(u64, Vec<u8>, Option<Address>)> {
-        println!(
+        info!(
             "[TEST:execute_call] start, caller: {}, method: {}",
             caller, method
         );
@@ -208,7 +232,7 @@ impl ContractExecutor {
             caller_address: caller.clone(),
             contract_address: contract.clone(),
             state: state.clone(),
-            gas_remaining: MAX_CONTRACT_FUEL, // TODO other way to set up
+            gas_remaining: gas_limit,
         };
 
         // Create store
@@ -216,7 +240,7 @@ impl ContractExecutor {
 
         // Set fuel
         store
-            .set_fuel(MAX_CONTRACT_FUEL)
+            .set_fuel(gas_limit)
             .map_err(|e| anyhow::anyhow!("Failed to set fuel: {}", e))?; // TODO should be set up other way
 
         // Load module
@@ -264,27 +288,27 @@ impl ContractExecutor {
         let return_data = self.serialize_results(&results)?;
 
         // Calculate gas used from WASM execution
-        let wasm_fuel_consumed = MAX_CONTRACT_FUEL - store.get_fuel()?;
-        println!(
+        let wasm_fuel_consumed = gas_limit - store.get_fuel()?;
+        info!(
             "[TEST:execute_call] store.get_fuel(): {}",
             store.get_fuel()?
         );
-        println!(
+        info!(
             "[TEST:execute_call] wasm_fuel_consumed: {}",
             wasm_fuel_consumed
         );
 
         // Add host function gas costs
         let context = store.data();
-        let host_gas_consumed = MAX_CONTRACT_FUEL - context.gas_remaining;
-        println!(
+        let host_gas_consumed = gas_limit - context.gas_remaining;
+        info!(
             "[TEST:execute_call] host_gas_consumed: {}",
             host_gas_consumed
         );
 
         // Total gas = WASM instructions + host function costs
         let total_gas_consumed = wasm_fuel_consumed + host_gas_consumed;
-        println!(
+        info!(
             "[TEST:execute_call] total_gas_consumed: {}",
             total_gas_consumed
         );
@@ -304,7 +328,7 @@ impl ContractExecutor {
             TransferGasMeter::new().operation_cost() as u64,
             vec![],
             None,
-        )) // Standard transfer cost TODO move to constant
+        ))
     }
 
     /// Parse raw bytes into WASM values, detecting address pointers
@@ -409,9 +433,26 @@ mod tests {
     use super::*;
     use wasmlette_blockchain::TransactionKind;
     use wasmlette_tokens::TokenUnit;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    /// Initialize tracing for tests (call once)
+    fn init_tracing() {
+        INIT.call_once(|| {
+            tracing_subscriber::fmt()
+                .with_test_writer()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::from_default_env()
+                        .add_directive(tracing::Level::INFO.into()),
+                )
+                .init();
+        });
+    }
 
     #[test]
     fn test_transfer_execution() {
+        init_tracing();
         let executor = ContractExecutor::new().unwrap();
         let state = Rc::new(RefCell::new(State::new()));
 

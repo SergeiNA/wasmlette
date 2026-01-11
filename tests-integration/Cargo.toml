@@ -7,6 +7,8 @@ edition.workspace = true
 wasmlette-blockchain = { path = "../crates/blockchain" }
 wasmlette-runtime = { path = "../crates/runtime" }
 wasmlette-node = { path = "../crates/node" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 
 [lib]
 # This is not a library, just a test crate
