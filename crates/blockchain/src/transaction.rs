@@ -5,7 +5,18 @@ use serde::{Deserialize, Serialize};
 const ADDRESS_LENGTH: usize = 20;
 
 /// 20-byte address (similar to Ethereum)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub struct Address([u8; ADDRESS_LENGTH]);
 
 impl Address {
@@ -46,7 +57,7 @@ impl std::fmt::Display for Address {
 }
 
 /// Different types of transactions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub enum TransactionKind {
     /// Deploy a new contract
     Deploy {
@@ -66,7 +77,7 @@ pub enum TransactionKind {
 }
 
 /// A transaction in the blockchain
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct Transaction {
     /// Sender's address
     pub sender: Address,
@@ -103,8 +114,10 @@ impl Transaction {
     }
 
     /// Calculate the hash of this transaction
+    /// Uses bincode for deterministic binary serialization
     pub fn hash(&self) -> [u8; 32] {
-        let serialized = serde_json::to_vec(self).expect("Failed to serialize transaction");
+        let serialized = bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to serialize transaction");
         blake3::hash(&serialized).into()
     }
 }

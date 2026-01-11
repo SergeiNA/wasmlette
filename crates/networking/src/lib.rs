@@ -1,7 +1,7 @@
 //! Networking layer (P2P and RPC)
 //!
 //! Optional component for Phase 5:
-//! - P2P protocol for node communication
+//! - P2P protocol for demon communication
 //! - JSON-RPC server for client interaction
 //! - Block synchronization
 

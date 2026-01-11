@@ -2,10 +2,11 @@
 
 use crate::errors::BlockchainError;
 use crate::transaction::Address;
+use bincode;
 use std::collections::HashMap;
 
 /// Contract metadata
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct ContractInfo {
     /// Contract address
     pub address: Address,
@@ -18,6 +19,7 @@ pub struct ContractInfo {
 }
 
 /// Global state manager
+#[derive(bincode::Encode, bincode::Decode)]
 pub struct State {
     /// Account balances in units of smallest denomination (micro-tokens)
     balances: HashMap<Address, u64>,

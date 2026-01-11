@@ -57,7 +57,7 @@ enum Commands {
         key: String,
     },
 
-    /// Start the node
+    /// Start the demon
     Run {
         /// Data directory
         #[arg(short, long, default_value = "./data")]
@@ -109,10 +109,10 @@ impl Cli {
             }
 
             Commands::Run { data_dir, rpc_port } => {
-                tracing::info!("Starting node...");
+                tracing::info!("Starting demon...");
                 tracing::info!("Data directory: {:?}", data_dir);
                 tracing::info!("RPC port: {}", rpc_port);
-                // TODO: Implement node runtime
+                // TODO: Implement demon runtime
                 println!("✓ Node started (press Ctrl+C to stop)");
                 Ok(())
             }

@@ -1,12 +1,12 @@
 //! Node management
 
-/// Network node
+/// Network demon
 pub struct Node {
-    // TODO: Implement node management
+    // TODO: Implement demon management
 }
 
 impl Node {
-    /// Create a new node
+    /// Create a new demon
     pub fn new() -> Self {
         Node {}
     }

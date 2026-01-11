@@ -2,10 +2,17 @@
 //!
 //! A minimal fungible token that uses context::get_caller()
 //! to ensure users can only transfer their own tokens.
+//!
+//! This contract demonstrates the use of the new procedural macros:
+//! - #[contract_init] for initialization functions
+//! - #[contract_call] for state-changing functions
+//! - #[contract_query] for read-only functions
 
 #![no_std]
 
-use wasmlette_contracts_sdk::{context, storage, ADDRESS_LENGTH};
+use wasmlette_contracts_sdk::{
+    context, contract_call, contract_init, contract_query, storage, ADDRESS_LENGTH,
+};
 
 // Storage keys
 const TOTAL_SUPPLY_KEY: &[u8] = b"total_supply";
@@ -17,8 +24,8 @@ const TOTAL_KEY_LEN: usize = KEY_NAME_LEN + ADDRESS_LENGTH;
 
 /// Initialize the token with fixed supply
 /// All tokens go to the deployer
-#[no_mangle]
-pub extern "C" fn init(initial_supply: u64) {
+#[contract_init]
+fn init(initial_supply: u64) {
     let deployer = context::get_caller();
 
     // Set total supply (immutable after init)
@@ -32,20 +39,20 @@ pub extern "C" fn init(initial_supply: u64) {
 }
 
 /// Get the total supply (fixed)
-#[no_mangle]
-pub extern "C" fn total_supply() -> u64 {
+#[contract_query]
+fn total_supply() -> u64 {
     get_u64(TOTAL_SUPPLY_KEY).unwrap_or(0)
 }
 
 /// Get balance of an address
-#[no_mangle]
-pub extern "C" fn balance_of(address: &[u8; ADDRESS_LENGTH]) -> u64 {
+#[contract_query]
+fn balance_of(address: &[u8; ADDRESS_LENGTH]) -> u64 {
     get_balance(address)
 }
 
 /// Get total number of transfers
-#[no_mangle]
-pub extern "C" fn transfer_count() -> u64 {
+#[contract_query]
+fn transfer_count() -> u64 {
     get_u64(TRANSFER_COUNT_KEY).unwrap_or(0)
 }
 
@@ -57,8 +64,8 @@ pub extern "C" fn transfer_count() -> u64 {
 ///
 /// # Returns
 /// 0 on success, negative error code on failure
-#[no_mangle]
-pub extern "C" fn transfer(to: &[u8; ADDRESS_LENGTH], amount: u64) -> i32 {
+#[contract_call]
+fn transfer(to: &[u8; ADDRESS_LENGTH], amount: u64) -> i32 {
     // ✅ Get the ACTUAL caller from runtime - guaranteed by host!
     let from = context::get_caller();
 

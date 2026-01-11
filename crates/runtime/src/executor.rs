@@ -37,57 +37,12 @@ impl ContractExecutor {
     ) -> Result<TransactionReceipt> {
         let tx_hash = tx.hash();
 
-        // Validate nonce
-        let expected_nonce = state.borrow().get_nonce(&tx.sender);
-        if tx.nonce != expected_nonce {
-            // TODO we should take fee from the sender's balance for incorrect nonce
-            return Ok(TransactionReceipt {
-                tx_hash,
-                success: false,
-                gas_used: 0,
-                return_data: vec![],
-                error_message: Some(format!(
-                    "Invalid nonce: expected {}, got {}",
-                    expected_nonce, tx.nonce
-                )),
-                contract_address: None,
-            });
-        }
+        // Validate transaction
+        // Return error if nonce is invalid or insufficient balance
+        self.validate_transaction(tx, &state)?;
 
         // Increment nonce
         state.borrow_mut().increment_nonce(&tx.sender);
-
-        let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
-        let caller_balance = state.borrow().get_balance(&tx.sender);
-        println!(
-            "[TEST:execute_transaction] caller_balance: {}, max_gas_cost {}",
-            caller_balance, max_gas_cost
-        );
-        if caller_balance < max_gas_cost {
-            return Ok(TransactionReceipt {
-                tx_hash,
-                success: false,
-                gas_used: 0,
-                return_data: vec![],
-                error_message: Some(format!(
-                    "Insufficient balance: expected {}, got {}",
-                    max_gas_cost, caller_balance
-                )),
-                contract_address: None,
-            });
-        }
-        // Reserve balance
-        state
-            .borrow_mut()
-            .set_balance(tx.sender.clone(), caller_balance - max_gas_cost);
-
-        {
-            let caller_balance = state.borrow().get_balance(&tx.sender);
-            println!(
-                "[TEST:execute_transaction] caller_balance after gas fee: {}",
-                caller_balance
-            );
-        }
 
         // Execute based on transaction type
         let result = match &tx.kind {
@@ -148,6 +103,47 @@ impl ContractExecutor {
                 })
             }
         }
+    }
+
+    fn validate_transaction(&self, tx: &Transaction, state: &Rc<RefCell<State>>) -> Result<()> {
+        // Validate nonce
+        let expected_nonce = state.borrow().get_nonce(&tx.sender);
+        if tx.nonce != expected_nonce {
+            return anyhow::bail!(
+                "Invalid nonce: expected {}, got {}",
+                expected_nonce,
+                tx.nonce
+            );
+        }
+        //TODO validate signature
+
+        // Check balance
+        let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
+        let caller_balance = state.borrow().get_balance(&tx.sender);
+        println!(
+            "[TEST:execute_transaction] caller_balance: {}, max_gas_cost {}",
+            caller_balance, max_gas_cost
+        );
+        if caller_balance < max_gas_cost {
+            return anyhow::bail!(
+                "Insufficient balance: expected {}, got {}",
+                max_gas_cost,
+                caller_balance
+            );
+        }
+        // Reserve balance
+        state
+            .borrow_mut()
+            .set_balance(tx.sender.clone(), caller_balance - max_gas_cost);
+
+        {
+            let caller_balance = state.borrow().get_balance(&tx.sender);
+            println!(
+                "[TEST:execute_transaction] caller_balance after gas fee: {}",
+                caller_balance
+            );
+        }
+        Ok(())
     }
 
     fn execute_deploy(
@@ -450,6 +446,241 @@ mod tests {
             state.borrow().get_balance(&to),
             TokenUnit::from_tokens(0.01)
         );
+    }
+
+    #[test]
+    fn test_invalid_nonce_returns_error() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+        let to = Address::from_slice(&[2u8; Address::LENGTH]);
+
+        // Give sender enough balance
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(1.0));
+
+        // Expected nonce is 0, but we provide 5
+        let tx = Transaction::new(
+            from,
+            5, // Wrong nonce!
+            TransactionKind::Transfer {
+                to,
+                amount: TokenUnit::from_tokens(0.01),
+            },
+            100000,
+            1,
+        );
+
+        let initial_balance = state.borrow().get_balance(&from);
+        let initial_nonce = state.borrow().get_nonce(&from);
+
+        // Should return Err, not Ok(receipt)
+        let result = executor.execute_transaction(state.clone(), &tx);
+
+        assert!(result.is_err(), "Expected Err for invalid nonce");
+        assert!(result.unwrap_err().to_string().contains("Invalid nonce"));
+
+        // Verify state unchanged
+        assert_eq!(
+            state.borrow().get_balance(&from),
+            initial_balance,
+            "Balance should not change"
+        );
+        assert_eq!(
+            state.borrow().get_nonce(&from),
+            initial_nonce,
+            "Nonce should not increment"
+        );
+        assert_eq!(
+            state.borrow().get_balance(&to),
+            0,
+            "Recipient should have no balance"
+        );
+    }
+
+    #[test]
+    fn test_insufficient_balance_returns_error() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+        let to = Address::from_slice(&[2u8; Address::LENGTH]);
+
+        // Give sender very small balance (not enough for gas)
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(0.001)); // Only 0.001 tokens
+
+        let tx = Transaction::new(
+            from,
+            0,
+            TransactionKind::Transfer {
+                to,
+                amount: TokenUnit::from_tokens(0.01),
+            },
+            100000, // gas_limit * gas_price = 100000 micro-tokens needed
+            1,
+        );
+
+        let initial_balance = state.borrow().get_balance(&from);
+        let initial_nonce = state.borrow().get_nonce(&from);
+
+        // Should return Err for insufficient balance
+        let result = executor.execute_transaction(state.clone(), &tx);
+
+        assert!(result.is_err(), "Expected Err for insufficient balance");
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Insufficient balance"));
+
+        // Verify state unchanged
+        assert_eq!(
+            state.borrow().get_balance(&from),
+            initial_balance,
+            "Balance should not change"
+        );
+        assert_eq!(
+            state.borrow().get_nonce(&from),
+            initial_nonce,
+            "Nonce should not increment"
+        );
+    }
+
+    #[test]
+    fn test_valid_transaction_failed_execution() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+        let to = Address::from_slice(&[2u8; Address::LENGTH]);
+
+        // Give sender enough balance for gas but NOT for transfer amount
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(0.2)); // 200,000 micro-tokens
+
+        let tx = Transaction::new(
+            from,
+            0,
+            TransactionKind::Transfer {
+                to,
+                amount: TokenUnit::from_tokens(1.0), // More than available!
+            },
+            100000,
+            1,
+        );
+
+        let initial_nonce = state.borrow().get_nonce(&from);
+
+        // Should return Ok(receipt) with success=false
+        let result = executor.execute_transaction(state.clone(), &tx);
+
+        assert!(result.is_ok(), "Should return Ok(receipt) for valid tx");
+        let receipt = result.unwrap();
+
+        assert!(!receipt.success, "Receipt should indicate failure");
+        assert!(receipt.gas_used > 0, "Gas should be consumed");
+        assert!(receipt.error_message.is_some());
+
+        // Nonce SHOULD be incremented (transaction was valid)
+        assert_eq!(
+            state.borrow().get_nonce(&from),
+            initial_nonce + 1,
+            "Nonce should increment for valid tx even if execution fails"
+        );
+
+        // Recipient should have no balance
+        assert_eq!(
+            state.borrow().get_balance(&to),
+            0,
+            "Transfer should not happen"
+        );
+    }
+
+    #[test]
+    fn test_validate_transaction_success() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+
+        // Give sufficient balance
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(1.0));
+
+        let tx = Transaction::new(
+            from,
+            0, // Correct nonce
+            TransactionKind::Transfer {
+                to: Address::zero(),
+                amount: TokenUnit::from_tokens(0.01),
+            },
+            100000,
+            1,
+        );
+
+        // Should succeed
+        let result = executor.validate_transaction(&tx, &state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_transaction_wrong_nonce() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(1.0));
+
+        let tx = Transaction::new(
+            from,
+            10, // Wrong nonce (expected 0)
+            TransactionKind::Transfer {
+                to: Address::zero(),
+                amount: TokenUnit::from_tokens(0.01),
+            },
+            100000,
+            1,
+        );
+
+        let result = executor.validate_transaction(&tx, &state);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid nonce"));
+    }
+
+    #[test]
+    fn test_validate_transaction_insufficient_balance() {
+        let executor = ContractExecutor::new().unwrap();
+        let state = Rc::new(RefCell::new(State::new()));
+
+        let from = Address::from_slice(&[1u8; Address::LENGTH]);
+        state
+            .borrow_mut()
+            .set_balance(from, TokenUnit::from_tokens(0.0001)); // Very low
+
+        let tx = Transaction::new(
+            from,
+            0,
+            TransactionKind::Transfer {
+                to: Address::zero(),
+                amount: TokenUnit::from_tokens(0.01),
+            },
+            100000, // Needs 100000 micro-tokens
+            1,
+        );
+
+        let result = executor.validate_transaction(&tx, &state);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Insufficient balance"));
     }
 
     #[test]

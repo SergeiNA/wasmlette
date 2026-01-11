@@ -6,6 +6,8 @@
 //! - Storage operations
 //! - Gas metering
 //! - Error handling
+//! - Node-level operations
 
 mod common;
 mod contracts;
+mod node;

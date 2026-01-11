@@ -5,13 +5,15 @@ members = [
     "crates/storage",
     "crates/tokens",
     "crates/contracts-sdk",
+    "crates/contracts-sdk-macros",
     "crates/networking",
-    "node",
-    "tests-integration",
+    "crates/node",
     "crates/contracts-sdk/examples/counter",
-    "crates/contracts-sdk/examples/token",
     "crates/contracts-sdk/examples/tester",
     "crates/contracts-sdk/examples/simple_token",
+    "tests-integration",
+    "demon",
+    "demon/examples/node_usage",
 ]
 
 # Only build main crates by default (exclude WASM contracts)
@@ -21,8 +23,10 @@ default-members = [
     "crates/storage",
     "crates/tokens",
     "crates/contracts-sdk",
+    "crates/contracts-sdk-macros",
     "crates/networking",
-    "node",
+    "crates/node",
+    "demon",
 ]
 
 resolver = "2"

@@ -12,6 +12,7 @@ blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex = "0.4"
+bincode = "2.0.1"
 
 [dev-dependencies]
 rand.workspace = true

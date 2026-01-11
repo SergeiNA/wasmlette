@@ -1,0 +1,2 @@
+pub const DEFAULT_GAS_PRICE: u64 = 1;
+pub const DEFAULT_GAS_LIMIT_TRANSFER: u64 = 20_000;

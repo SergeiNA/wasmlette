@@ -203,7 +203,7 @@ cargo run --bin wasmlette -- run
 # Specify custom port and data directory
 cargo run --bin wasmlette -- run \
     --rpc-port 8545 \
-    --data-dir ./my-node-data
+    --data-dir ./my-demon-data
 
 # Or use the convenience script
 ./scripts/run_node.sh

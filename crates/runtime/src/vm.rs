@@ -1,5 +1,6 @@
 //! WASM VM wrapper using wasmtime
 
+use crate::constants::MAX_CONTRACT_SIZE;
 use anyhow::Result;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -40,7 +41,7 @@ impl WasmEngine {
         config.wasm_threads(false);
 
         config.wasm_memory64(false); // 32-bit memory only
-        config.max_wasm_stack(512 * 1024); // 512KB stack
+        config.max_wasm_stack(MAX_CONTRACT_SIZE); // 1024KB stack
 
         let engine = Engine::new(&config)?;
 

@@ -4,7 +4,7 @@ use crate::transaction::Transaction;
 use serde::{Deserialize, Serialize};
 
 /// Represents a single block in the blockchain
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct Block {
     /// Block number (height)
     pub number: u64,
@@ -41,8 +41,10 @@ impl Block {
     }
 
     /// Calculate the hash of this block
+    /// Uses bincode for deterministic binary serialization
     pub fn hash(&self) -> [u8; 32] {
-        let serialized = serde_json::to_vec(self).expect("Failed to serialize block");
+        let serialized = bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to serialize block");
         blake3::hash(&serialized).into()
     }
 

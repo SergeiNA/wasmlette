@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 wasmlette-blockchain = { path = "../crates/blockchain" }
 wasmlette-runtime = { path = "../crates/runtime" }
+wasmlette-node = { path = "../crates/node" }
 
 [lib]
 # This is not a library, just a test crate

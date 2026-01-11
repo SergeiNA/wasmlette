@@ -97,6 +97,32 @@ impl TestEnv {
         Ok(receipt.return_data)
     }
 
+    /// Transfer native tokens
+    /// Returns Err if transaction is invalid (validation fails)
+    /// Returns Ok(()) if transaction is valid (even if execution fails)
+    pub fn transfer(
+        &self,
+        from: Address,
+        nonce: u64,
+        to: Address,
+        amount: u64,
+    ) -> Result<(), String> {
+        let transfer_tx = Transaction {
+            sender: from,
+            nonce,
+            kind: TransactionKind::Transfer { to, amount },
+            gas_limit: DEFAULT_GAS_LIMIT,
+            gas_price: DEFAULT_GAS_PRICE,
+        };
+
+        // Returns Err only if transaction is invalid (validation failure)
+        // Returns Ok even if execution fails (will be in receipt.success)
+        self.executor
+            .execute_transaction(self.state.clone(), &transfer_tx)
+            .map(|_| ())
+            .map_err(|e| format!("Transfer transaction failed: {}", e))
+    }
+
     /// Get storage value
     pub fn get_storage(&self, contract: Address, key: &[u8]) -> Option<Vec<u8>> {
         self.state.borrow().get_storage(contract, key.to_vec())
@@ -118,6 +144,11 @@ impl TestEnv {
     /// Get balance of address
     pub fn get_balance(&self, address: &Address) -> u64 {
         self.state.borrow().get_balance(address)
+    }
+
+    /// Get nonce of address
+    pub fn get_nonce(&self, address: &Address) -> u64 {
+        self.state.borrow().get_nonce(address)
     }
 
     /// Check if contract exists

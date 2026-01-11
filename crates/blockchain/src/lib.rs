@@ -7,9 +7,10 @@
 //! - Merkle tree for state commitment
 
 pub mod block;
-pub mod chain;
+pub mod builder;
 pub mod crypto;
 pub mod errors;
+pub mod manager;
 pub mod merkle;
 pub mod state;
 pub mod transaction;
@@ -17,6 +18,8 @@ pub mod utils;
 
 // Re-export main types
 pub use block::Block;
+pub use builder::BlockBuilder;
 pub use errors::BlockchainError;
+pub use manager::BlockchainManager;
 pub use state::State;
 pub use transaction::{Address, Transaction, TransactionKind, TransactionReceipt};

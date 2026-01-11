@@ -1,4 +1,4 @@
-//! Wasmlette node binary
+//! Wasmlette demon binary
 
 use anyhow::Result;
 use clap::Parser;

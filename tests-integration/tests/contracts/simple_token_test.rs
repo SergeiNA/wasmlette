@@ -343,3 +343,216 @@ fn test_exact_balance_for_gas() {
         "Should be able to transact with refunded balance"
     );
 }
+
+#[test]
+fn test_deploy_invalid_nonce_rejected() {
+    let env = TestEnv::new();
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+
+    let initial_balance = env.get_balance(&alice);
+    let initial_nonce = env.get_nonce(&alice);
+
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
+
+    // Try to deploy with wrong nonce (expected 0, providing 5)
+    let result = env.deploy_contract(
+        alice, 5, // Wrong nonce!
+        TOKEN_WASM, init_args,
+    );
+
+    // Should be rejected with error
+    assert!(result.is_err(), "Invalid nonce should return Err");
+    assert!(
+        result.unwrap_err().contains("Invalid nonce"),
+        "Error should mention invalid nonce"
+    );
+
+    // Verify state unchanged
+    assert_eq!(
+        env.get_balance(&alice),
+        initial_balance,
+        "Balance should not change on rejected transaction"
+    );
+    assert_eq!(
+        env.get_nonce(&alice),
+        initial_nonce,
+        "Nonce should not increment on rejected transaction"
+    );
+}
+
+#[test]
+fn test_call_invalid_nonce_rejected() {
+    let env = TestEnv::new();
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
+
+    // Deploy token first
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
+
+    let balance_after_deploy = env.get_balance(&alice);
+    let nonce_after_deploy = env.get_nonce(&alice); // Should be 1
+
+    // Try to call with wrong nonce (expected 1, providing 10)
+    let transfer_args = ArgsBuilder::new().add_address(&bob).add_u64(100).build();
+    let result = env.call_contract(
+        alice,
+        10, // Wrong nonce!
+        token,
+        "transfer",
+        transfer_args,
+    );
+
+    // Should be rejected
+    assert!(result.is_err(), "Invalid nonce should return Err");
+    assert!(result.unwrap_err().contains("Invalid nonce"));
+
+    // Verify state unchanged
+    assert_eq!(
+        env.get_balance(&alice),
+        balance_after_deploy,
+        "Balance should not change"
+    );
+    assert_eq!(
+        env.get_nonce(&alice),
+        nonce_after_deploy,
+        "Nonce should not increment"
+    );
+
+    // Bob should have no tokens
+    let bob_token_balance = env.get_storage_u64(token, &get_balance_key(&bob));
+    assert_eq!(bob_token_balance, None, "Transfer should not happen");
+}
+
+#[test]
+fn test_deploy_insufficient_gas_balance_rejected() {
+    let env = TestEnv::new();
+
+    // Give Alice very small balance (not enough for gas)
+    let alice = env.create_account(1, TokenUnit::from_tokens(0.001)); // Only 0.001 tokens
+
+    let initial_balance = env.get_balance(&alice);
+    let initial_nonce = env.get_nonce(&alice);
+
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
+
+    // Try to deploy (requires much more gas than available)
+    let result = env.deploy_contract(alice, 0, TOKEN_WASM, init_args);
+
+    // Should be rejected
+    assert!(result.is_err(), "Insufficient balance should return Err");
+    assert!(
+        result.unwrap_err().contains("Insufficient balance"),
+        "Error should mention insufficient balance"
+    );
+
+    // Verify state unchanged
+    assert_eq!(
+        env.get_balance(&alice),
+        initial_balance,
+        "Balance should not change"
+    );
+    assert_eq!(
+        env.get_nonce(&alice),
+        initial_nonce,
+        "Nonce should not increment"
+    );
+}
+
+#[test]
+fn test_call_insufficient_gas_balance_rejected() {
+    let env = TestEnv::new();
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+
+    // Deploy token first (Alice uses some gas)
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
+
+    // Drain Alice's balance almost completely
+    let current_balance = env.get_balance(&alice);
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
+
+    // Create Charlie with very low balance
+    let charlie = env.create_account(3, TokenUnit::from_tokens(0.0001));
+
+    let charlie_balance = env.get_balance(&charlie);
+    let charlie_nonce = env.get_nonce(&charlie);
+
+    // Try to call contract (Charlie has insufficient gas)
+    let transfer_args = ArgsBuilder::new().add_address(&bob).add_u64(50).build();
+    let result = env.call_contract(charlie, 0, token, "transfer", transfer_args);
+
+    // Should be rejected
+    assert!(result.is_err(), "Insufficient balance should return Err");
+    assert!(result.unwrap_err().contains("Insufficient balance"));
+
+    // Verify Charlie's state unchanged
+    assert_eq!(
+        env.get_balance(&charlie),
+        charlie_balance,
+        "Balance should not change"
+    );
+    assert_eq!(
+        env.get_nonce(&charlie),
+        charlie_nonce,
+        "Nonce should not increment"
+    );
+}
+
+#[test]
+fn test_valid_tx_execution_failure_charges_gas() {
+    let env = TestEnv::new();
+    let alice = env.create_account(1, TokenUnit::from_tokens(10.0));
+    let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
+
+    // Deploy token
+    let init_args = ArgsBuilder::new().add_u64(1_000).build();
+    let token = env
+        .deploy_contract(alice, 0, TOKEN_WASM, init_args)
+        .unwrap();
+
+    let balance_after_deploy = env.get_balance(&alice);
+    let nonce_after_deploy = env.get_nonce(&alice);
+
+    // Try to transfer more tokens than Alice has (execution will fail)
+    let transfer_args = ArgsBuilder::new()
+        .add_address(&bob)
+        .add_u64(10_000) // Alice only has 1000!
+        .build();
+
+    let result = env.call_contract(alice, 1, token, "transfer", transfer_args);
+
+    // Transaction should be accepted (valid nonce, sufficient gas balance)
+    // But execution fails
+    assert!(
+        result.is_ok(),
+        "Valid transaction should return Ok(receipt)"
+    );
+
+    // Nonce SHOULD increment (transaction was valid)
+    assert_eq!(
+        env.get_nonce(&alice),
+        nonce_after_deploy + 1,
+        "Nonce should increment for valid tx even if execution fails"
+    );
+
+    // Gas SHOULD be charged
+    let balance_after_failed_tx = env.get_balance(&alice);
+    assert!(
+        balance_after_failed_tx < balance_after_deploy,
+        "Gas should be charged even for failed execution"
+    );
+
+    // Bob should not receive tokens
+    let bob_token_balance = env
+        .get_storage_u64(token, &get_balance_key(&bob))
+        .unwrap_or(0);
+    assert_eq!(
+        bob_token_balance, 0,
+        "Failed transfer should not move tokens"
+    );
+}

@@ -6,8 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-serde.workspace = true
-serde_json.workspace = true
 wasmlette-blockchain = { path = "../blockchain" }
+wasmlette-contracts-sdk-macros = { path = "../contracts-sdk-macros" }
 
 [dev-dependencies]
