@@ -1,0 +1,16 @@
+[package]
+name = "simple_token"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasmlette-contracts-sdk = { path = "../../" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

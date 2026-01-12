@@ -1,0 +1,19 @@
+[package]
+name = "wasmlette-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+wasmlette-blockchain = { path = "../blockchain" }
+wasmlette-tokens = { path = "../tokens" }
+wasmtime.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+tracing = "0.1"
+
+[dev-dependencies]
+wat = "1.0"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }

@@ -1,0 +1,12 @@
+[package]
+name = "wasmlette-contracts-sdk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+wasmlette-blockchain = { path = "../blockchain" }
+wasmlette-contracts-sdk-macros = { path = "../contracts-sdk-macros" }
+
+[dev-dependencies]
