@@ -84,6 +84,14 @@ The node will start with:
 - Genesis block initialized
 - Ready to accept transactions
 
+**Graceful Shutdown:**
+- Press `Ctrl+C` or send `SIGTERM` signal to stop the node
+- The node will:
+  1. Stop accepting new RPC requests
+  2. Wait for in-flight requests to complete
+  3. Clean up resources
+  4. Exit gracefully with status message
+
 ### 2. Interact via Python Client
 
 ```bash
@@ -273,15 +281,30 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+# Build contract for integration tests
+cargo build --release --target wasm32-unknown-unknown -p simple_token
+
 # Run integration tests (requires running node)
 # Terminal 1: Start node
-cargo run --release -p demon -- --rpc-port 8545
+cargo run --release -p wasmlette-demon -- --rpc-port 18545
 
 # Terminal 2: Run tests
 cd tests/integration
 source venv/bin/activate
 pytest test_rpc_server.py -v
+
+# Or run a specific test
+pytest test_rpc_server.py::test_deploy_and_call_contract -v -s
 ```
+
+**What's tested:**
+- Node connectivity and basic RPC calls
+- Account creation and balance queries
+- Native token transfers
+- Contract deployment (simple_token)
+- Contract method calls (balance_of, transfer, total_supply)
+- Gas metering and refunds
+- Error handling for invalid requests
 
 ## Writing Your Own Contract
 
@@ -394,6 +417,38 @@ Production code uses proper error propagation with:
 - Graceful degradation in query functions (return safe defaults)
 - JSON-RPC error codes for API failures
 
+## Operational Features
+
+### Graceful Shutdown
+The node daemon implements proper signal handling for clean shutdown:
+
+```bash
+# Start node
+cargo run --release -p wasmlette-demon -- --rpc-port 8545
+
+# Graceful shutdown (any of these):
+# - Press Ctrl+C
+# - Send SIGTERM: kill -TERM <pid>
+# - Docker stop (sends SIGTERM by default)
+```
+
+**Shutdown Behavior:**
+1. Catches SIGINT (Ctrl+C) and SIGTERM signals
+2. Stops accepting new connections
+3. Allows in-flight RPC requests to complete
+4. Logs shutdown progress
+5. Exits with status code 0
+
+**Testing:**
+```bash
+# Automated test
+./scripts/test_graceful_shutdown.sh
+```
+
+Cross-platform support:
+- Unix/Linux/macOS: Handles both SIGINT and SIGTERM
+- Windows: Handles Ctrl+C gracefully
+
 ## Development
 
 ### Project Structure Overview
@@ -423,6 +478,7 @@ cargo build --release --target wasm32-unknown-unknown -p counter
 - Use `tracing` for logging (not `println!`)
 - Proper error handling (no `.unwrap()` in production code)
 - Thread-safe state management with `Arc<Mutex<>>`
+- Graceful shutdown with signal handling
 - Comprehensive tests for all features
 
 ## Contributing
@@ -432,6 +488,7 @@ Contributions are welcome! Please ensure:
 2. Code is formatted: `cargo fmt --all`
 3. No clippy warnings: `cargo clippy --workspace --all-targets`
 4. Contracts build: `cargo build --release --target wasm32-unknown-unknown -p counter -p simple_token -p tester`
+5. Integration tests pass (requires contracts built and node running)
 
 ## License
 

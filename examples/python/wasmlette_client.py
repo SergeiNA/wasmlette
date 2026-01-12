@@ -236,25 +236,31 @@ def main():
         print(f"  Timestamp: {block['timestamp']}")
         print(f"  Transactions: {block['transactions_count']}")
 
-    # Transfer example (commented out - uncomment if you have funded accounts)
-    # print(f"\nTransferring 1000 tokens from Alice to Bob...")
-    # receipt = client.transfer(alice, bob, 1000)
-    # print(f"Transfer receipt: {receipt}")
+     # Create accounts
+    print(f"\nCreating test accounts...")
+    alice_account = client.create_account(alice, 100)
 
-    # Deploy contract example (commented out - uncomment if you have a WASM file)
-    # print(f"\nDeploying contract...")
-    # with open("contract.wasm", "rb") as f:
-    #     wasm_bytes = f.read()
-    #     wasm_hex = "0x" + wasm_bytes.hex()
-    #
-    # deploy_result = client.deploy(alice, wasm_hex)
-    # print(f"Deploy result: {deploy_result}")
-    # contract_addr = deploy_result["contract_address"]
-    #
-    # # Call contract
-    # print(f"\nCalling contract method...")
-    # call_result = client.call(alice, contract_addr, "get_value", "0x")
-    # print(f"Call result: {call_result}")
+    # Transfer example (commented out - uncomment if you have funded accounts)
+    print(f"\nTransferring 1000 tokens from Alice to Bob...")
+    receipt = client.transfer(alice, bob, 10)
+    print(f"Transfer receipt: {receipt}")
+
+
+
+#     # Deploy contract example (commented out - uncomment if you have a WASM file)
+#     print(f"\nDeploying contract...")
+#     with open("../../target/wasm32-unknown-unknown/release/counter.wasm", "rb") as f:
+#         wasm_bytes = f.read()
+#         wasm_hex = "0x" + wasm_bytes.hex()
+#
+#     deploy_result = client.deploy(alice, wasm_hex)
+#     print(f"Deploy result: {deploy_result}")
+#     contract_addr = deploy_result["contract_address"]
+#
+#     # # Call contract
+#     print(f"\nCalling contract method...")
+#     call_result = client.call(alice, contract_addr, "get_value", "0x")
+#     print(f"Call result: {call_result}")
 
 
 if __name__ == "__main__":

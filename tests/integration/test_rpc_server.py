@@ -226,21 +226,27 @@ def test_deploy_contract(client):
     deployer = client.create_account(5, 100_000_000)
     print(f"  Deployer: {deployer}")
 
-    # Use the counter.wasm test contract
+    # Use the simple_token.wasm contract
     # Find it relative to project root
     project_root = Path(__file__).parent.parent.parent
-    wasm_path = project_root / "crates" / "runtime" / "tests" / "counter.wasm"
+    wasm_path = project_root / "target" / "wasm32-unknown-unknown" / "release" / "simple_token.wasm"
 
     if not wasm_path.exists():
-        pytest.skip(f"Counter WASM not found at {wasm_path}")
+        pytest.skip(f"simple_token.wasm not found at {wasm_path}. Run: cargo build --release --target wasm32-unknown-unknown -p simple_token")
 
     with open(wasm_path, "rb") as f:
         wasm_bytes = f.read()
         wasm_hex = "0x" + wasm_bytes.hex()
 
-    print(f"  Deploying contract ({len(wasm_bytes)} bytes)...")
+    # simple_token.init(initial_supply: u64)
+    # Pass initial supply of 1,000,000 tokens (as little-endian u64)
+    initial_supply = 1_000_000
+    init_args_hex = "0x" + initial_supply.to_bytes(8, byteorder='little').hex()
 
-    result = client.deploy(deployer, wasm_hex, "0x")
+    print(f"  Deploying simple_token contract ({len(wasm_bytes)} bytes)...")
+    print(f"  Initial supply: {initial_supply}")
+
+    result = client.deploy(deployer, wasm_hex, init_args_hex)
 
     assert "success" in result, "Result should have success field"
     assert "gas_used" in result, "Result should have gas_used field"
@@ -252,6 +258,102 @@ def test_deploy_contract(client):
     print(f"  Contract address: {result['contract_address']}")
 
     assert result["contract_address"] is not None, "Successful deploy should have contract address"
+
+
+def test_deploy_and_call_contract(client):
+    """Test deploying a contract and calling its methods"""
+    # Create funded account for deploying
+    deployer = client.create_account(6, 100_000_000)
+    print(f"  Deployer: {deployer}")
+
+    # Use the simple_token.wasm contract
+    project_root = Path(__file__).parent.parent.parent
+    wasm_path = project_root / "target" / "wasm32-unknown-unknown" / "release" / "simple_token.wasm"
+
+    if not wasm_path.exists():
+        pytest.skip(f"simple_token.wasm not found at {wasm_path}. Run: cargo build --release --target wasm32-unknown-unknown -p simple_token")
+
+    with open(wasm_path, "rb") as f:
+        wasm_bytes = f.read()
+        wasm_hex = "0x" + wasm_bytes.hex()
+
+    # Deploy with initial supply of 1,000,000
+    initial_supply = 1_000_000
+    init_args_hex = "0x" + initial_supply.to_bytes(8, byteorder='little').hex()
+
+    print(f"  Deploying simple_token contract...")
+    deploy_result = client.deploy(deployer, wasm_hex, init_args_hex)
+    assert deploy_result["success"] is True, "Deploy should succeed"
+
+    contract_address = deploy_result["contract_address"]
+    print(f"  Contract deployed at: {contract_address}")
+
+    # Call total_supply() method (returns u64, no args)
+    print(f"  Calling total_supply()...")
+    result = client.call(deployer, contract_address, "total_supply", "0x")
+    assert result["success"] is True, "total_supply call should succeed"
+    print(f"  total_supply gas used: {result['gas_used']}")
+
+    # Parse return data (u64 little-endian)
+    return_data = bytes.fromhex(result["return_data"][2:])  # Remove 0x prefix
+    if len(return_data) >= 8:
+        total_supply = int.from_bytes(return_data[:8], byteorder='little')
+        print(f"  Total supply: {total_supply}")
+        assert total_supply == initial_supply, f"Total supply should be {initial_supply}, got {total_supply}"
+
+    # Call balance_of(deployer) - deployer should have all tokens
+    print(f"  Calling balance_of(deployer)...")
+    deployer_bytes = bytes.fromhex(deployer[2:])  # Remove 0x prefix
+    balance_of_args = "0x" + deployer_bytes.hex()
+
+    result = client.call(deployer, contract_address, "balance_of", balance_of_args)
+    assert result["success"] is True, "balance_of call should succeed"
+    print(f"  balance_of gas used: {result['gas_used']}")
+
+    # Parse balance (u64 little-endian)
+    return_data = bytes.fromhex(result["return_data"][2:])
+    if len(return_data) >= 8:
+        deployer_balance = int.from_bytes(return_data[:8], byteorder='little')
+        print(f"  Deployer balance: {deployer_balance}")
+        assert deployer_balance == initial_supply, f"Deployer should have {initial_supply} tokens, got {deployer_balance}"
+
+    # Test transfer within the token contract
+    recipient = client.create_account(7, 0)
+    print(f"  Recipient: {recipient}")
+
+    # Call transfer(recipient, 500) - send 500 tokens
+    transfer_amount = 500
+    recipient_bytes = bytes.fromhex(recipient[2:])
+    transfer_args = recipient_bytes + transfer_amount.to_bytes(8, byteorder='little')
+    transfer_args_hex = "0x" + transfer_args.hex()
+
+    print(f"  Calling transfer(recipient, {transfer_amount})...")
+    result = client.call(deployer, contract_address, "transfer", transfer_args_hex)
+    assert result["success"] is True, "transfer call should succeed"
+    print(f"  transfer gas used: {result['gas_used']}")
+
+    # Parse return value (i32 - 0 on success, negative on error)
+    return_data = bytes.fromhex(result["return_data"][2:])
+    if len(return_data) >= 4:
+        return_code = int.from_bytes(return_data[:4], byteorder='little', signed=True)
+        print(f"  Transfer return code: {return_code}")
+        assert return_code == 0, f"Transfer should return 0 on success, got {return_code}"
+
+    # Verify recipient received tokens
+    print(f"  Verifying recipient balance...")
+    recipient_bytes = bytes.fromhex(recipient[2:])
+    balance_of_args = "0x" + recipient_bytes.hex()
+
+    result = client.call(deployer, contract_address, "balance_of", balance_of_args)
+    assert result["success"] is True, "balance_of call should succeed"
+
+    return_data = bytes.fromhex(result["return_data"][2:])
+    if len(return_data) >= 8:
+        recipient_balance = int.from_bytes(return_data[:8], byteorder='little')
+        print(f"  Recipient balance: {recipient_balance}")
+        assert recipient_balance == transfer_amount, f"Recipient should have {transfer_amount} tokens, got {recipient_balance}"
+
+    print(f"  ✓ Contract deployment and calls successful!")
 
 
 def test_invalid_address(client):
