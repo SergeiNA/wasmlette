@@ -31,7 +31,7 @@ pip install -r requirements.txt
 Or create a separate venv for tests:
 
 ```bash
-cd tests/integration
+cd tests-integration/integration
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -45,8 +45,8 @@ Make sure the venv is activated first:
 # If using examples/python/venv
 source examples/python/venv/bin/activate
 
-# Or if you created tests/integration/venv
-cd tests/integration
+# Or if you created tests-integration/integration/venv
+cd tests-integration/integration
 source venv/bin/activate
 ```
 
@@ -54,7 +54,7 @@ source venv/bin/activate
 
 ```bash
 # From project root (using examples/python/venv)
-./examples/python/venv/bin/python -m pytest tests/integration/test_rpc_server.py -v
+./examples/python/venv/bin/python -m pytest tests-integration/integration/test_rpc_server.py -v
 
 # Or with activated venv
 python -m pytest test_rpc_server.py -v
@@ -189,7 +189,7 @@ To run in CI:
 # Install Rust and Python dependencies
 pip install -r requirements.txt
 
-# Run tests
+# Run tests-integration
 python -m pytest test_rpc_server.py -v --tb=short
 ```
 

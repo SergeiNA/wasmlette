@@ -53,11 +53,11 @@ cd ../counter_raw && cargo build --target wasm32-unknown-unknown --release
 
 ### Test with Runtime
 ```bash
-# Copy compiled WASM to runtime tests
-cp counter/target/wasm32-unknown-unknown/release/counter.wasm ../../runtime/tests/
-cp counter_raw/target/wasm32-unknown-unknown/release/counter_raw.wasm ../../runtime/tests/
+# Copy compiled WASM to runtime tests-integration
+cp counter/target/wasm32-unknown-unknown/release/counter.wasm ../../runtime/tests-integration/
+cp counter_raw/target/wasm32-unknown-unknown/release/counter_raw.wasm ../../runtime/tests-integration/
 
-# Run integration tests
+# Run integration tests-integration
 cd ../../../
 cargo test --package wasmlette-runtime
 ```

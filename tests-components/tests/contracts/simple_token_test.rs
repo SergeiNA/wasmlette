@@ -1,4 +1,4 @@
-//! Simple Token contract integration tests
+//! Simple Token contract integration tests-integration
 
 use crate::common::{ArgsBuilder, TestEnv};
 use wasmlette_blockchain::Address;
@@ -126,7 +126,7 @@ fn test_token_transfer_insufficient_balance() {
     // This should fail with error code -3 (insufficient balance)
     // Note: Currently we expect transaction to succeed but return error code
     // In a real system, might want to check return data
-    let result = env.call_contract(alice, 1, token, "transfer", transfer_args);
+    let _result = env.call_contract(alice, 1, token, "transfer", transfer_args);
 
     // For now, just verify balances didn't change
     let alice_balance = env
@@ -473,7 +473,7 @@ fn test_call_insufficient_gas_balance_rejected() {
         .unwrap();
 
     // Drain Alice's balance almost completely
-    let current_balance = env.get_balance(&alice);
+    let _current_balance = env.get_balance(&alice);
     let bob = env.create_account(2, TokenUnit::from_tokens(10.0));
 
     // Create Charlie with very low balance

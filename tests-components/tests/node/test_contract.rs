@@ -1,4 +1,4 @@
-//! Node-level contract integration tests
+//! Node-level contract integration tests-integration
 //!
 //! Tests contract deployment and execution at the node level, including:
 //! - Contract deployment with block creation

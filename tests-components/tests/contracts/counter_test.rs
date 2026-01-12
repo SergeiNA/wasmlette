@@ -1,7 +1,6 @@
-//! Counter contract integration tests
+//! Counter contract integration tests-integration
 
 use crate::common::{ArgsBuilder, TestEnv};
-use wasmlette_blockchain::Address;
 use wasmlette_runtime::TokenUnit;
 
 const COUNTER_WASM: &[u8] =
@@ -123,7 +122,7 @@ fn test_counter_get_count() {
         .unwrap();
 
     // Get count (returns u64)
-    let result = env
+    let _result = env
         .call_contract(deployer, 2, contract, "get_count", vec![])
         .expect("get_count should succeed");
 

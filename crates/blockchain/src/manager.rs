@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_initialize_genesis() {
         let state = Arc::new(Mutex::new(State::new()));
-        let mut chain = BlockchainManager::new(state).unwrap();
+        let chain = BlockchainManager::new(state).unwrap();
 
         let genesis = chain.head.as_ref().unwrap();
         assert_eq!(genesis.number, 0);

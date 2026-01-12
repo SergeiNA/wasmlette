@@ -1,4 +1,4 @@
-//! Native token transfer integration tests
+//! Native token transfer integration tests-integration
 //!
 //! Tests for TransactionKind::Transfer - direct transfers of native blockchain tokens
 //! between accounts without involving smart contracts.

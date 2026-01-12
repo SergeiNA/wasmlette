@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_memory_get_memory_success() {
-        let (mut store, instance, _memory) = create_test_setup().unwrap();
+        let (mut store, _instance, _memory) = create_test_setup().unwrap();
 
         // Create a simple host function to test get_memory
         let engine = store.engine().clone();

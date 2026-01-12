@@ -480,7 +480,7 @@ mod tests {
 
     static INIT: Once = Once::new();
 
-    /// Initialize tracing for tests (call once)
+    /// Initialize tracing for tests-integration (call once)
     fn init_tracing() {
         INIT.call_once(|| {
             tracing_subscriber::fmt()

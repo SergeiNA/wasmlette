@@ -1,5 +1,5 @@
 [package]
-name = "wasmlette-integration-tests"
+name = "wasmlette-tests-component"
 version.workspace = true
 edition.workspace = true
 
@@ -14,9 +14,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 # This is not a library, just a test crate
 path = "lib.rs"
 
-# Disable running this as a regular test (we only want integration tests)
-test = false
-
 [[test]]
-name = "integration_tests"
-path = "tests/integration_tests.rs"
+name = "tests-component"
+path = "tests/component_tests.rs"

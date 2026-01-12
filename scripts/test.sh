@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all tests in the workspace
+# Run all tests-integration in the workspace
 
 set -e
 

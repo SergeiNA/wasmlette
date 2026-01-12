@@ -1,7 +1,5 @@
 //! Common test utilities and helpers
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{Address, State};
@@ -12,7 +10,7 @@ const DEFAULT_GAS_PRICE: u64 = 1;
 
 static INIT: Once = Once::new();
 
-/// Initialize tracing for tests (call once)
+/// Initialize tracing for tests-integration (call once)
 pub fn init_tracing() {
     INIT.call_once(|| {
         tracing_subscriber::fmt()

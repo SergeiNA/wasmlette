@@ -1,4 +1,4 @@
-//! Integration tests for Wasmlette
+//! Integration tests-integration for Wasmlette
 //!
 //! This test suite validates the entire system including:
 //! - Contract deployment and execution

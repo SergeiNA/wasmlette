@@ -1,4 +1,4 @@
-//! Contract integration tests
+//! Contract integration tests-integration
 
 pub mod counter_test;
 pub mod simple_token_test;

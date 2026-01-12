@@ -248,7 +248,7 @@ Utility contract for testing host functions:
 
 Run all tests:
 ```bash
-# Run all unit and integration tests
+# Run all unit and component tests
 cargo test --workspace
 
 # Run with output
@@ -276,20 +276,20 @@ cargo test -p wasmlette-tokens
 
 ```bash
 # Setup (first time only)
-cd tests/integration
+cd tests-integration/integration
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Build contract for integration tests
+# Build contract for integration tests-integration
 cargo build --release --target wasm32-unknown-unknown -p simple_token
 
-# Run integration tests (requires running node)
+# Run integration tests-integration (requires running node)
 # Terminal 1: Start node
 cargo run --release -p wasmlette-demon -- --rpc-port 18545
 
-# Terminal 2: Run tests
-cd tests/integration
+# Terminal 2: Run tests-integration
+cd tests-integration/integration
 source venv/bin/activate
 pytest test_rpc_server.py -v
 
