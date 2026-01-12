@@ -69,8 +69,7 @@ impl MemoryHelper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
     use wasmlette_blockchain::{Address, State};
     use wasmtime::{Engine, Instance, Linker, Module, Store};
 
@@ -79,7 +78,7 @@ mod tests {
         let engine = Engine::default();
 
         // Create minimal runtime context
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let context = RuntimeContext {
             caller_address: Address::from_slice(&[1u8; Address::LENGTH]),
             contract_address: Address::from_slice(&[2u8; Address::LENGTH]),

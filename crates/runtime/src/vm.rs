@@ -2,8 +2,7 @@
 
 use crate::constants::MAX_CONTRACT_SIZE;
 use anyhow::Result;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wasmlette_blockchain::transaction::Address;
 use wasmlette_blockchain::State;
 use wasmtime::*;
@@ -17,7 +16,7 @@ pub struct RuntimeContext {
     pub contract_address: Address,
 
     /// Shared state
-    pub state: Rc<RefCell<State>>,
+    pub state: Arc<Mutex<State>>,
 
     /// Remaining gas
     pub gas_remaining: u64,
@@ -73,6 +72,7 @@ impl Default for WasmEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_engine_creation() {
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn test_store_creation() {
         let engine = WasmEngine::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),

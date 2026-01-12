@@ -12,8 +12,14 @@ path = "src/main.rs"
 [dependencies]
 wasmlette-blockchain = { path = "../crates/blockchain" }
 wasmlette-runtime = { path = "../crates/runtime" }
+wasmlette-node = { path = "../crates/node" }
 #wasmlette-storage = { path = "../crates/storage" }
 #wasmlette-networking = { path = "../crates/networking" }
+
+# JSON-RPC server
+jsonrpsee = { version = "0.22", features = ["server", "macros"] }
+tokio = { version = "1", features = ["full"] }
+hex = "0.4"
 
 clap.workspace = true
 anyhow.workspace = true

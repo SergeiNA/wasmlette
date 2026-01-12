@@ -1,15 +1,17 @@
 # Wasmlette
 
-A minimal WebAssembly-based smart contract runtime built with Rust, featuring gas metering, native token support, and a comprehensive SDK for contract development.
+A minimal WebAssembly-based smart contract runtime built with Rust, featuring gas metering, native token support, JSON-RPC API, and a comprehensive SDK for contract development.
 
 ## Features
 
 - **WASM Runtime**: Powered by Wasmtime for secure contract execution
 - **Gas Metering**: Precise gas tracking with upfront reservation and refunds
 - **Token System**: Native tokens with 6-decimal precision for gas payments
+- **JSON-RPC API**: Full-featured JSON-RPC 2.0 server for node interaction
 - **Rich SDK**: Developer-friendly contract SDK with storage, context, and crypto APIs
-- **State Management**: Efficient key-value storage with contract isolation
+- **State Management**: Thread-safe key-value storage with contract isolation
 - **Testing Framework**: Comprehensive integration tests with helper utilities
+- **Python Client**: Ready-to-use Python client for easy integration
 
 ## Project Structure
 
@@ -19,7 +21,7 @@ wasmlette/
 │   ├── blockchain/          # Core blockchain primitives
 │   │   └── src/
 │   │       ├── block.rs         # Block structure and validation
-│   │       ├── chain.rs         # Blockchain state machine
+│   │       ├── manager.rs       # Blockchain manager
 │   │       ├── transaction.rs   # Transaction types
 │   │       ├── state.rs         # Account and contract state
 │   │       └── errors.rs        # Error types
@@ -48,11 +50,111 @@ wasmlette/
 │   │       └── tester/          # Testing utilities
 │   │
 │   ├── storage/             # State persistence layer
-│   ├── networking/          # P2P and RPC (future)
-│   └── node/                # Node binary
+│   ├── networking/          # P2P networking (future)
+│   └── node/                # High-level node API
 │
-├── tests-integration/       # Integration tests
-└── demon/                   # Demonstration node
+├── demon/                   # Node daemon with JSON-RPC server
+│   ├── src/
+│   │   ├── main.rs              # Server entry point
+│   │   ├── rpc/                 # JSON-RPC implementation
+│   │   └── cli.rs               # CLI configuration
+│   └── Cargo.toml
+│
+├── examples/python/         # Python client examples
+│   ├── wasmlette_client.py      # Python RPC client
+│   └── simple_example.py        # Usage examples
+│
+└── tests-integration/       # Integration tests
+```
+
+## Quick Start
+
+### 1. Run the Node
+
+```bash
+# Build and run the node with JSON-RPC server
+cargo run --release -p demon -- --rpc-port 8545
+
+# Or with custom data directory
+cargo run --release -p demon -- --data-dir ./data --rpc-port 8545
+```
+
+The node will start with:
+- JSON-RPC server listening on `http://127.0.0.1:8545`
+- Genesis block initialized
+- Ready to accept transactions
+
+### 2. Interact via Python Client
+
+```bash
+# Setup Python environment
+cd examples/python
+./setup_venv.sh
+
+# Run examples
+source venv/bin/activate
+python simple_example.py
+```
+
+### 3. Or use curl
+
+```bash
+# Get chain height
+curl -X POST http://127.0.0.1:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"wlt_getHeight","params":[],"id":1}'
+
+# Get balance
+curl -X POST http://127.0.0.1:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"wlt_getBalance","params":["0x0101010101010101010101010101010101010101"],"id":1}'
+```
+
+## JSON-RPC API
+
+The node exposes a full JSON-RPC 2.0 API:
+
+### Account Management
+- `wlt_getBalance(address: String) -> String` - Get account balance
+- `wlt_getNonce(address: String) -> u64` - Get account nonce
+- `wlt_createAccount(seed: u8, balance: String) -> String` - Create test account
+
+### Transactions
+- `wlt_transfer(from: String, to: String, amount: String) -> String` - Transfer tokens
+- `wlt_deploy(deployer: String, wasm_hex: String, init_args_hex: String) -> String` - Deploy contract
+- `wlt_call(caller: String, contract: String, method: String, args_hex: String) -> String` - Call contract
+
+### Blockchain
+- `wlt_getBlock(block_number: u64) -> Option<BlockInfo>` - Get block by number
+- `wlt_getHeight() -> u64` - Get current chain height
+- `wlt_getReceipt(tx_hash: String) -> Option<ReceiptInfo>` - Get transaction receipt (TODO)
+
+### Python Client Example
+
+```python
+from wasmlette_client import WasmletteClient
+
+# Connect to node
+client = WasmletteClient("http://127.0.0.1:8545")
+
+# Create accounts
+alice = client.create_account(seed=1, balance=1000000)
+bob = client.create_account(seed=2, balance=0)
+
+# Transfer tokens
+receipt = client.transfer(alice, bob, 500000)
+print(f"Transfer success: {receipt['success']}")
+
+# Deploy contract
+with open("counter.wasm", "rb") as f:
+    wasm_code = f.read().hex()
+
+result = client.deploy(alice, wasm_code, "")
+contract_addr = result['contract_address']
+
+# Call contract
+result = client.call(alice, contract_addr, "increment", "")
+print(f"Increment success: {result['success']}")
 ```
 
 ## Building Contracts
@@ -134,26 +236,51 @@ Utility contract for testing host functions:
 
 ## Running Tests
 
+### Rust Tests
+
 Run all tests:
 ```bash
+# Run all unit and integration tests
 cargo test --workspace
+
+# Run with output
+cargo test --workspace -- --nocapture
 ```
 
 Run specific test suites:
 ```bash
-# Runtime tests
+# Runtime tests (executor, gas, host functions)
 cargo test -p wasmlette-runtime
 
-# Integration tests
-cargo test -p wasmlette-integration-tests
+# WASM integration tests
+cargo test -p wasmlette-runtime --test wasm_integration_test
+cargo test -p wasmlette-runtime --test test_transfer
+cargo test -p wasmlette-runtime --test host_function_test
+
+# Node tests
+cargo test -p wasmlette-node
 
 # Token unit tests
 cargo test -p wasmlette-tokens
 ```
 
-Run with output:
+### Python Integration Tests
+
 ```bash
-cargo test -- --nocapture
+# Setup (first time only)
+cd tests/integration
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Run integration tests (requires running node)
+# Terminal 1: Start node
+cargo run --release -p demon -- --rpc-port 8545
+
+# Terminal 2: Run tests
+cd tests/integration
+source venv/bin/activate
+pytest test_rpc_server.py -v
 ```
 
 ## Writing Your Own Contract
@@ -219,22 +346,92 @@ cargo build --release --target wasm32-unknown-unknown
 - **Smallest unit**: 0.000001 tokens
 
 ### Gas Mechanism
-1. **Reservation**: `gas_limit × gas_price` deducted upfront
-2. **Execution**: Gas consumed during contract execution
-3. **Refund**: `(gas_limit - gas_used) × gas_price` returned to sender
+1. **Validation**: Check balance ≥ `gas_limit × gas_price`
+2. **Reservation**: `gas_limit × gas_price` deducted upfront
+3. **Execution**: Gas consumed during contract execution
+4. **Refund**: `(gas_limit - gas_used) × gas_price` returned to sender
+5. **Nonce**: Account nonce incremented for valid transactions
+
+### Gas Costs
+- **Transfer**: 11,000 gas
+- **Deploy**: Base cost + per-byte code cost
+- **Contract Call**: Wasm execution cost + host function costs
+- **Storage Write**: Per-byte storage cost
+- **Storage Read**: Per-byte read cost
+- **Hash (Blake3)**: Per-byte hash cost
+- **Balance Query**: Fixed cost
 
 ### Example Transaction
 ```rust
 Transaction {
     gas_limit: 100_000,    // Max gas units
-    gas_price: 10,         // 10 units per gas
-    // Max cost: 1,000,000 units (1.0 token)
+    gas_price: 1,          // 1 unit per gas
+    // Max cost: 100,000 units (0.1 token)
 }
 
 // If only 60,000 gas used:
-// Charged: 600,000 units
-// Refunded: 400,000 units
+// Charged: 60,000 units (0.06 tokens)
+// Refunded: 40,000 units (0.04 tokens)
 ```
+
+### Failed Transactions
+- **Invalid nonce/signature**: Transaction rejected, no gas charged, nonce not incremented
+- **Insufficient balance**: Transaction rejected, no gas charged
+- **Execution failure**: Fixed failure fee charged (5,000 gas), nonce incremented
+
+## Architecture
+
+### Thread Safety
+The runtime uses `Arc<Mutex<State>>` for thread-safe state management, enabling concurrent RPC requests. While this introduces some locking overhead, it's necessary for:
+- **Wasmtime constraints**: Host functions require shared state semantics
+- **Nested calls**: WASM can call back into host functions recursively
+- **RPC server**: Multiple concurrent JSON-RPC requests
+
+### Error Handling
+Production code uses proper error propagation with:
+- `Result<T, E>` with `?` operator for operations that can fail
+- `.map_err()` for context-specific error messages
+- Graceful degradation in query functions (return safe defaults)
+- JSON-RPC error codes for API failures
+
+## Development
+
+### Project Structure Overview
+- **demon**: Node daemon with JSON-RPC server (main binary)
+- **crates/node**: High-level node API
+- **crates/runtime**: WASM execution and transaction processing
+- **crates/blockchain**: Block, transaction, and state primitives
+- **crates/contracts-sdk**: Contract development SDK
+- **crates/tokens**: Token denomination utilities
+- **crates/storage**: State persistence (in-memory)
+- **examples/python**: Python client and examples
+- **tests/integration**: Python integration tests
+
+### Building the Project
+```bash
+# Build all workspace members
+cargo build --workspace --release
+
+# Build only the node daemon
+cargo build --release -p demon
+
+# Build contracts
+cargo build --release --target wasm32-unknown-unknown -p counter
+```
+
+### Code Style
+- Use `tracing` for logging (not `println!`)
+- Proper error handling (no `.unwrap()` in production code)
+- Thread-safe state management with `Arc<Mutex<>>`
+- Comprehensive tests for all features
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+1. All tests pass: `cargo test --workspace`
+2. Code is formatted: `cargo fmt --all`
+3. No clippy warnings: `cargo clippy --workspace --all-targets`
+4. Contracts build: `cargo build --release --target wasm32-unknown-unknown -p counter -p simple_token -p tester`
 
 ## License
 

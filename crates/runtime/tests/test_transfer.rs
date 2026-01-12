@@ -2,8 +2,7 @@
 //!
 //! Tests the low-level execute_transfer method in ContractExecutor
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::{ContractExecutor, TokenUnit};
@@ -11,17 +10,17 @@ use wasmlette_runtime::{ContractExecutor, TokenUnit};
 #[test]
 fn test_execute_transfer_success() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     // Set up initial balances
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(10.0));
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(to, TokenUnit::from_tokens(5.0));
 
     let tx = Transaction::new(
@@ -42,8 +41,8 @@ fn test_execute_transfer_success() {
     assert_eq!(receipt.gas_used, 11_000); // Standard transfer cost
 
     // Verify balances
-    let from_balance = state.borrow().get_balance(&from);
-    let to_balance = state.borrow().get_balance(&to);
+    let from_balance = state.lock().unwrap().get_balance(&from);
+    let to_balance = state.lock().unwrap().get_balance(&to);
 
     // From: 10.0 - 2.0 (transfer) - 0.011 (gas) = 7.989
     assert_eq!(from_balance, TokenUnit::from_tokens(7.989));
@@ -52,23 +51,23 @@ fn test_execute_transfer_success() {
     assert_eq!(to_balance, TokenUnit::from_tokens(7.0));
 
     // Nonce should increment
-    assert_eq!(state.borrow().get_nonce(&from), 1);
+    assert_eq!(state.lock().unwrap().get_nonce(&from), 1);
 }
 
 #[test]
 fn test_execute_transfer_insufficient_balance() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     // From has only 1 token
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(1.0));
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(to, TokenUnit::from_tokens(5.0));
 
     let tx = Transaction::new(
@@ -90,29 +89,29 @@ fn test_execute_transfer_insufficient_balance() {
     assert!(receipt.error_message.is_some());
 
     // From balance decreased by gas only
-    let from_balance = state.borrow().get_balance(&from);
+    let from_balance = state.lock().unwrap().get_balance(&from);
     assert!(from_balance < TokenUnit::from_tokens(1.0), "Gas charged");
 
     // To balance unchanged
-    assert_eq!(state.borrow().get_balance(&to), TokenUnit::from_tokens(5.0));
+    assert_eq!(state.lock().unwrap().get_balance(&to), TokenUnit::from_tokens(5.0));
 
     // Nonce should still increment (valid transaction)
-    assert_eq!(state.borrow().get_nonce(&from), 1);
+    assert_eq!(state.lock().unwrap().get_nonce(&from), 1);
 }
 
 #[test]
 fn test_execute_transfer_zero_amount() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(10.0));
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(to, TokenUnit::from_tokens(5.0));
 
     let tx = Transaction::new(
@@ -129,25 +128,25 @@ fn test_execute_transfer_zero_amount() {
     assert!(receipt.success, "Zero transfer should succeed");
 
     // Balances: from pays gas, to unchanged
-    let from_balance = state.borrow().get_balance(&from);
-    let to_balance = state.borrow().get_balance(&to);
+    let from_balance = state.lock().unwrap().get_balance(&from);
+    let to_balance = state.lock().unwrap().get_balance(&to);
 
     assert!(from_balance < TokenUnit::from_tokens(10.0), "From pays gas");
     assert_eq!(to_balance, TokenUnit::from_tokens(5.0), "To unchanged");
 
     // Nonce increments
-    assert_eq!(state.borrow().get_nonce(&from), 1);
+    assert_eq!(state.lock().unwrap().get_nonce(&from), 1);
 }
 
 #[test]
 fn test_execute_transfer_to_self() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let address = Address::from_slice(&[1u8; Address::LENGTH]);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(address, TokenUnit::from_tokens(10.0));
 
     let tx = Transaction::new(
@@ -167,7 +166,7 @@ fn test_execute_transfer_to_self() {
     assert!(receipt.success, "Self-transfer should succeed");
 
     // Balance: only pays gas (transfer cancels out)
-    let balance = state.borrow().get_balance(&address);
+    let balance = state.lock().unwrap().get_balance(&address);
     assert!(balance < TokenUnit::from_tokens(10.0), "Pays gas");
     assert!(
         balance > TokenUnit::from_tokens(9.9),
@@ -175,19 +174,19 @@ fn test_execute_transfer_to_self() {
     );
 
     // Nonce increments
-    assert_eq!(state.borrow().get_nonce(&address), 1);
+    assert_eq!(state.lock().unwrap().get_nonce(&address), 1);
 }
 
 #[test]
 fn test_execute_transfer_invalid_nonce() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(10.0));
 
     // Wrong nonce (expected 0, providing 5)
@@ -210,23 +209,23 @@ fn test_execute_transfer_invalid_nonce() {
 
     // State unchanged
     assert_eq!(
-        state.borrow().get_balance(&from),
+        state.lock().unwrap().get_balance(&from),
         TokenUnit::from_tokens(10.0)
     );
-    assert_eq!(state.borrow().get_nonce(&from), 0);
+    assert_eq!(state.lock().unwrap().get_nonce(&from), 0);
 }
 
 #[test]
 fn test_execute_transfer_insufficient_gas_balance() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     // Very low balance - not enough for gas
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(0.0001));
 
     let tx = Transaction::new(
@@ -254,22 +253,22 @@ fn test_execute_transfer_insufficient_gas_balance() {
 
     // State unchanged
     assert_eq!(
-        state.borrow().get_balance(&from),
+        state.lock().unwrap().get_balance(&from),
         TokenUnit::from_tokens(0.0001)
     );
-    assert_eq!(state.borrow().get_nonce(&from), 0);
+    assert_eq!(state.lock().unwrap().get_nonce(&from), 0);
 }
 
 #[test]
 fn test_execute_transfer_gas_refund() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let from = Address::from_slice(&[1u8; Address::LENGTH]);
     let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(from, TokenUnit::from_tokens(10.0));
 
     let tx = Transaction::new(
@@ -291,7 +290,7 @@ fn test_execute_transfer_gas_refund() {
     assert!(receipt.gas_used < 100_000, "Should refund unused gas");
 
     // Verify refund applied
-    let from_balance = state.borrow().get_balance(&from);
+    let from_balance = state.lock().unwrap().get_balance(&from);
 
     // Cost = 11_000 * 1 = 11_000 micro-tokens = 0.011 tokens
     // Balance = 10.0 - 1.0 (transfer) - 0.011 (gas) = 8.989
@@ -301,13 +300,13 @@ fn test_execute_transfer_gas_refund() {
 #[test]
 fn test_execute_multiple_transfers_sequential() {
     let executor = ContractExecutor::new().unwrap();
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let alice = Address::from_slice(&[1u8; Address::LENGTH]);
     let bob = Address::from_slice(&[2u8; Address::LENGTH]);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(alice, TokenUnit::from_tokens(10.0));
 
     // Transfer 1: Alice -> Bob (nonce 0)
@@ -324,7 +323,7 @@ fn test_execute_multiple_transfers_sequential() {
 
     let receipt1 = executor.execute_transaction(state.clone(), &tx1).unwrap();
     assert!(receipt1.success);
-    assert_eq!(state.borrow().get_nonce(&alice), 1);
+    assert_eq!(state.lock().unwrap().get_nonce(&alice), 1);
 
     // Transfer 2: Alice -> Bob (nonce 1)
     let tx2 = Transaction::new(
@@ -340,16 +339,16 @@ fn test_execute_multiple_transfers_sequential() {
 
     let receipt2 = executor.execute_transaction(state.clone(), &tx2).unwrap();
     assert!(receipt2.success);
-    assert_eq!(state.borrow().get_nonce(&alice), 2);
+    assert_eq!(state.lock().unwrap().get_nonce(&alice), 2);
 
     // Bob should have 5.0 tokens
     assert_eq!(
-        state.borrow().get_balance(&bob),
+        state.lock().unwrap().get_balance(&bob),
         TokenUnit::from_tokens(5.0)
     );
 
     // Alice should have: 10.0 - 5.0 (transfers) - ~0.022 (gas) ≈ 4.978
-    let alice_balance = state.borrow().get_balance(&alice);
+    let alice_balance = state.lock().unwrap().get_balance(&alice);
     assert!(alice_balance < TokenUnit::from_tokens(5.0));
     assert!(alice_balance > TokenUnit::from_tokens(4.9));
 }

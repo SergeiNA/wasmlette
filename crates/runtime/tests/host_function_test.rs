@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::{RuntimeContext, WasmEngine};
 use wasmlette_tokens::TokenUnit;
@@ -8,12 +7,12 @@ use wasmtime::Linker;
 #[test]
 fn test_storage_host_functions() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec().clone())
         .unwrap();
 
@@ -46,7 +45,7 @@ fn test_storage_host_functions() {
 
     // Check initial count is 0
     let value = state
-        .borrow()
+        .lock().unwrap()
         .get_storage(contract, b"count".into())
         .unwrap();
     let count = u64::from_le_bytes(value.try_into().unwrap());
@@ -66,7 +65,7 @@ fn test_storage_host_functions() {
 
     // Verify state was modified
     let value = state
-        .borrow()
+        .lock().unwrap()
         .get_storage(contract, b"count".into())
         .unwrap();
     let count = u64::from_le_bytes(value.try_into().unwrap());
@@ -76,7 +75,7 @@ fn test_storage_host_functions() {
 #[test]
 fn test_balance_host_functions() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
@@ -88,16 +87,16 @@ fn test_balance_host_functions() {
     let alice_balance_tokens = 1.0;
     let bob_balance_tokens = 0.5;
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(alice, TokenUnit::from_tokens(alice_balance_tokens));
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(bob, TokenUnit::from_tokens(bob_balance_tokens));
     // zero_balance intentionally has no balance (0)
 
     // Deploy contract
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec())
         .unwrap();
 
@@ -166,13 +165,13 @@ fn test_balance_host_functions() {
 #[test]
 fn test_hash_host_functions() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     // Deploy contract
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec())
         .unwrap();
 
@@ -234,13 +233,13 @@ fn test_hash_host_functions() {
 #[test]
 fn test_get_caller_host_functions() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     // Deploy contract
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec())
         .unwrap();
     // Create test address
@@ -293,15 +292,15 @@ fn test_get_caller_host_functions() {
 #[test]
 fn test_gas_refund_with_storage_operations() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     let initial_balance = TokenUnit::from_tokens(10.0);
-    state.borrow_mut().set_balance(contract, initial_balance);
+    state.lock().unwrap().set_balance(contract, initial_balance);
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec().clone())
         .unwrap();
 
@@ -347,12 +346,12 @@ fn test_gas_refund_with_storage_operations() {
 #[test]
 fn test_storage_with_insufficient_gas() {
     // Setup with very low gas
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec().clone())
         .unwrap();
 
@@ -386,7 +385,7 @@ fn test_storage_with_insufficient_gas() {
 
     // The call may succeed at WASM level but storage operation should not complete
     // due to insufficient gas. Verify storage was NOT modified.
-    let stored_value = state.borrow().get_storage(contract, b"count".to_vec());
+    let stored_value = state.lock().unwrap().get_storage(contract, b"count".to_vec());
 
     // If result errored, that's fine (out of fuel)
     // If result succeeded, verify storage wasn't modified (host function returned early)
@@ -411,19 +410,19 @@ fn test_storage_with_insufficient_gas() {
 #[test]
 fn test_balance_query_gas_cost() {
     // Test that balance queries consume predictable gas
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let contract = Address::from_slice(&[0xAB; Address::LENGTH]);
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/tester.wasm");
 
     // Set up test addresses with balances
     let alice = Address::from_slice(&[0x01; Address::LENGTH]);
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(alice, TokenUnit::from_tokens(5.0));
 
     // Deploy contract
     state
-        .borrow_mut()
+        .lock().unwrap()
         .deploy_contract(contract, wasm_code.to_vec())
         .unwrap();
 

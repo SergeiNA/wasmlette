@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{transaction::Address, State};
 use wasmlette_runtime::ContractExecutor;
@@ -8,7 +7,7 @@ use wasmlette_tokens::TokenUnit;
 #[test]
 fn test_deploy_and_call_contract() {
     // Setup
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let executor = ContractExecutor::new().unwrap();
 
     // Use counter_raw which doesn't have an init() function
@@ -18,7 +17,7 @@ fn test_deploy_and_call_contract() {
     let deployer = Address::from_slice(&[0x01; Address::LENGTH]);
     let deployer_balance_tokens = 2.0;
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(deployer, TokenUnit::from_tokens(deployer_balance_tokens)); // Give deployer some balance
 
     let deploy_tx = Transaction {
@@ -45,11 +44,11 @@ fn test_deploy_and_call_contract() {
     let contract_address = receipt.contract_address.expect("No contract address");
 
     // Verify contract exists
-    assert!(state.borrow().contract_exists(&contract_address));
+    assert!(state.lock().unwrap().contract_exists(&contract_address));
 
     // Verify storage was initialized
     let stored_value = state
-        .borrow()
+        .lock().unwrap()
         .get_storage(contract_address, b"count".to_vec());
     assert!(
         stored_value.is_some(),
@@ -84,7 +83,7 @@ fn test_deploy_and_call_contract() {
 
     // Verify storage was updated (use contract_address!)
     let stored_value = state
-        .borrow()
+        .lock().unwrap()
         .get_storage(contract_address, b"count".to_vec());
     assert!(
         stored_value.is_some(),
@@ -98,7 +97,7 @@ fn test_deploy_and_call_contract() {
     println!("Call gas used: {}", call_receipt.gas_used);
 
     // Verify gas refund was applied
-    let deployer_final_balance = state.borrow().get_balance(&deployer);
+    let deployer_final_balance = state.lock().unwrap().get_balance(&deployer);
     let total_gas_paid = TokenUnit::from_tokens(deployer_balance_tokens) - deployer_final_balance;
 
     // Calculate expected gas cost
@@ -118,12 +117,12 @@ fn test_deploy_and_call_contract() {
 #[test]
 fn test_failed_transaction_gas_refund() {
     // Test that failed transactions still charge gas but refund unused portion
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let executor = ContractExecutor::new().unwrap();
 
     let deployer = Address::from_slice(&[0x01; Address::LENGTH]);
     state
-        .borrow_mut()
+        .lock().unwrap()
         .set_balance(deployer, TokenUnit::from_tokens(10.0));
 
     // Try to call a non-existent contract
@@ -141,7 +140,7 @@ fn test_failed_transaction_gas_refund() {
         gas_price: 1,
     };
 
-    let initial_balance = state.borrow().get_balance(&deployer);
+    let initial_balance = state.lock().unwrap().get_balance(&deployer);
 
     // Execute - should fail but still process
     let receipt = executor
@@ -152,7 +151,7 @@ fn test_failed_transaction_gas_refund() {
     assert!(receipt.error_message.is_some(), "Should have error message");
 
     // Verify gas was charged but refunded
-    let final_balance = state.borrow().get_balance(&deployer);
+    let final_balance = state.lock().unwrap().get_balance(&deployer);
     let gas_paid = initial_balance - final_balance;
 
     // Should charge SOME gas (failure fee) but not the full limit
@@ -173,14 +172,14 @@ fn test_failed_transaction_gas_refund() {
 #[test]
 fn test_multiple_transactions_cumulative_gas() {
     // Test cumulative gas costs across multiple transactions
-    let state = Rc::new(RefCell::new(State::new()));
+    let state = Arc::new(Mutex::new(State::new()));
     let executor = ContractExecutor::new().unwrap();
 
     let wasm_code = include_bytes!("../../../target/wasm32-unknown-unknown/release/counter.wasm");
     let deployer = Address::from_slice(&[0x01; Address::LENGTH]);
 
     let initial_balance = TokenUnit::from_tokens(10.0);
-    state.borrow_mut().set_balance(deployer, initial_balance);
+    state.lock().unwrap().set_balance(deployer, initial_balance);
 
     // Transaction 1: Deploy
     let deploy_tx = Transaction {
@@ -200,7 +199,7 @@ fn test_multiple_transactions_cumulative_gas() {
     assert!(receipt1.success);
     let contract_address = receipt1.contract_address.unwrap();
 
-    let balance_after_deploy = state.borrow().get_balance(&deployer);
+    let balance_after_deploy = state.lock().unwrap().get_balance(&deployer);
     let gas_cost_1 = initial_balance - balance_after_deploy;
 
     // Transaction 2: Call increment
@@ -221,7 +220,7 @@ fn test_multiple_transactions_cumulative_gas() {
         .unwrap();
     assert!(receipt2.success);
 
-    let balance_after_call1 = state.borrow().get_balance(&deployer);
+    let balance_after_call1 = state.lock().unwrap().get_balance(&deployer);
     let gas_cost_2 = balance_after_deploy - balance_after_call1;
 
     // Transaction 3: Call increment again
@@ -242,7 +241,7 @@ fn test_multiple_transactions_cumulative_gas() {
         .unwrap();
     assert!(receipt3.success);
 
-    let final_balance = state.borrow().get_balance(&deployer);
+    let final_balance = state.lock().unwrap().get_balance(&deployer);
     let gas_cost_3 = balance_after_call1 - final_balance;
 
     // Verify cumulative costs
@@ -260,7 +259,7 @@ fn test_multiple_transactions_cumulative_gas() {
 
     // Verify counter was incremented twice
     let count = state
-        .borrow()
+        .lock().unwrap()
         .get_storage(contract_address, b"count".to_vec())
         .unwrap();
     assert_eq!(u64::from_le_bytes(count.try_into().unwrap()), 2);

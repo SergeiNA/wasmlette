@@ -3,9 +3,9 @@
 use crate::gas_meter::{GetBalanceGasMeter, HashGasMeter, StoreGasMeter, StoreOperationType};
 use crate::RuntimeContext;
 use anyhow::Result;
+use tracing::info;
 use wasmlette_blockchain::Address;
 use wasmtime::Linker;
-use tracing::info;
 
 /// Register all host functions with the linker
 pub fn register_host_functions(linker: &mut Linker<RuntimeContext>) -> Result<()> {
@@ -57,7 +57,10 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
                 // Get state and contract address from context
                 let context = caller.data_mut();
                 let contract_address = context.contract_address;
-                let state = context.state.borrow();
+                let state = match context.state.lock() {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
                 // Query storage
                 value = match state.get_storage(contract_address, key) {
@@ -197,7 +200,10 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
             // Get state and contract address from context
             let context = caller.data();
             let contract_address = context.contract_address;
-            let mut state = context.state.borrow_mut();
+            let mut state = match context.state.lock() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
 
             // Write to storage
             state.set_storage(contract_address, key, value);
@@ -249,7 +255,10 @@ fn register_balance_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
 
             // Get state and contract address from context
             let context = caller.data();
-            let state = context.state.borrow();
+            let state = match context.state.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
 
             state.get_balance(&address) as i64
         },

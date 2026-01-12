@@ -216,7 +216,10 @@ mod tests {
 
         // Verify with wrong message
         let result = verify_signature(wrong_message, &signature, &keypair.public_key_bytes());
-        assert!(result.is_err(), "Verification should fail with wrong message");
+        assert!(
+            result.is_err(),
+            "Verification should fail with wrong message"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Once;
+use std::sync::{Arc, Mutex, Once};
 use wasmlette_blockchain::transaction::{Transaction, TransactionKind};
 use wasmlette_blockchain::{Address, State};
 use wasmlette_runtime::ContractExecutor;
@@ -27,7 +27,7 @@ pub fn init_tracing() {
 
 /// Test fixture for contract testing
 pub struct TestEnv {
-    pub state: Rc<RefCell<State>>,
+    pub state: Arc<Mutex<State>>,
     pub executor: ContractExecutor,
 }
 
@@ -35,7 +35,7 @@ impl TestEnv {
     /// Create a new test environment
     pub fn new() -> Self {
         Self {
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             executor: ContractExecutor::new().unwrap(),
         }
     }
@@ -43,7 +43,7 @@ impl TestEnv {
     /// Create an address with initial balance
     pub fn create_account(&self, seed: u8, balance: u64) -> Address {
         let address = Address::from_slice(&[seed; Address::LENGTH]);
-        self.state.borrow_mut().set_balance(address, balance);
+        self.state.lock().unwrap().set_balance(address, balance);
         address
     }
 
@@ -141,7 +141,7 @@ impl TestEnv {
 
     /// Get storage value
     pub fn get_storage(&self, contract: Address, key: &[u8]) -> Option<Vec<u8>> {
-        self.state.borrow().get_storage(contract, key.to_vec())
+        self.state.lock().unwrap().get_storage(contract, key.to_vec())
     }
 
     /// Get storage as u64
@@ -159,17 +159,17 @@ impl TestEnv {
 
     /// Get balance of address
     pub fn get_balance(&self, address: &Address) -> u64 {
-        self.state.borrow().get_balance(address)
+        self.state.lock().unwrap().get_balance(address)
     }
 
     /// Get nonce of address
     pub fn get_nonce(&self, address: &Address) -> u64 {
-        self.state.borrow().get_nonce(address)
+        self.state.lock().unwrap().get_nonce(address)
     }
 
     /// Check if contract exists
     pub fn contract_exists(&self, address: &Address) -> bool {
-        self.state.borrow().contract_exists(address)
+        self.state.lock().unwrap().contract_exists(address)
     }
 }
 
@@ -193,11 +193,6 @@ impl ArgsBuilder {
         self
     }
 
-    pub fn add_bytes(mut self, bytes: &[u8]) -> Self {
-        self.data.extend_from_slice(bytes);
-        self
-    }
-
     pub fn build(self) -> Vec<u8> {
         self.data
     }
@@ -210,7 +205,7 @@ mod tests {
     #[test]
     fn test_env_creation() {
         let env = TestEnv::new();
-        assert!(env.state.borrow().contract_exists(&Address::zero()) == false);
+        assert_eq!(env.state.lock().unwrap().contract_exists(&Address::zero()), false);
     }
 
     #[test]

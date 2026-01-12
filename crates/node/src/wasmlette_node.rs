@@ -3,8 +3,7 @@
 //! Provides simple interface for blockchain operations.
 
 use crate::constants::{DEFAULT_GAS_LIMIT_TRANSFER, DEFAULT_GAS_PRICE};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wasmlette_blockchain::{
     Address, Block, BlockBuilder, BlockchainManager, State, Transaction, TransactionKind,
     TransactionReceipt,
@@ -19,13 +18,13 @@ pub struct WasmletteNode {
     executor: ContractExecutor,
 
     /// Shared state
-    state: Rc<RefCell<State>>,
+    state: Arc<Mutex<State>>,
 }
 
 impl WasmletteNode {
     /// Create a new demon and initialize with genesis
     pub fn new() -> anyhow::Result<Self> {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let executor = ContractExecutor::new()?;
         let chain = BlockchainManager::new(state.clone())?;
 
@@ -45,7 +44,11 @@ impl WasmletteNode {
         gas_limit: u64,
     ) -> anyhow::Result<TransactionReceipt> {
         // Get nonce
-        let nonce = self.state.borrow().get_nonce(&deployer);
+        let nonce = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .get_nonce(&deployer);
 
         // Create transaction
         let tx = Transaction::new(
@@ -72,7 +75,11 @@ impl WasmletteNode {
         args: Vec<u8>,
         gas_limit: u64,
     ) -> anyhow::Result<TransactionReceipt> {
-        let nonce = self.state.borrow().get_nonce(&caller);
+        let nonce = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .get_nonce(&caller);
 
         let tx = Transaction::new(
             caller,
@@ -96,7 +103,11 @@ impl WasmletteNode {
         to: Address,
         amount: u64,
     ) -> anyhow::Result<TransactionReceipt> {
-        let nonce = self.state.borrow().get_nonce(&from);
+        let nonce = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .get_nonce(&from);
 
         let tx = Transaction::new(
             from,
@@ -123,7 +134,11 @@ impl WasmletteNode {
 
         let mut builder = BlockBuilder::with_parent(&parent);
         builder.add_transaction(tx);
-        let block = builder.build(&self.state.borrow())?;
+        let state = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?;
+        let block = builder.build(&*state)?;
 
         // Add block to chain
         self.chain.add_block(block)?;
@@ -135,22 +150,34 @@ impl WasmletteNode {
 
     /// Get account balance
     pub fn get_balance(&self, address: &Address) -> u64 {
-        self.state.borrow().get_balance(address)
+        self.state
+            .lock()
+            .map(|state| state.get_balance(address))
+            .unwrap_or(0)
     }
 
     /// Get account nonce
     pub fn get_nonce(&self, address: &Address) -> u64 {
-        self.state.borrow().get_nonce(address)
+        self.state
+            .lock()
+            .map(|state| state.get_nonce(address))
+            .unwrap_or(0)
     }
 
     /// Check if contract exists
     pub fn contract_exists(&self, address: &Address) -> bool {
-        self.state.borrow().contract_exists(address)
+        self.state
+            .lock()
+            .map(|state| state.contract_exists(address))
+            .unwrap_or(false)
     }
 
     /// Get contract storage value
     pub fn get_storage(&self, contract: Address, key: Vec<u8>) -> Option<Vec<u8>> {
-        self.state.borrow().get_storage(contract, key)
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.get_storage(contract, key))
     }
 
     /// Get block by number
@@ -171,7 +198,9 @@ impl WasmletteNode {
     /// Create an account with initial balance (for testing)
     pub fn create_account(&mut self, seed: u8, balance: u64) -> Address {
         let address = Address::from_slice(&[seed; Address::LENGTH]);
-        self.state.borrow_mut().set_balance(address, balance);
+        if let Ok(mut state) = self.state.lock() {
+            state.set_balance(address, balance);
+        }
         address
     }
 }

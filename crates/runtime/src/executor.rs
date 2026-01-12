@@ -5,15 +5,13 @@ use crate::gas_fee_calculator::GasCalculator;
 use crate::host_api::register_host_functions;
 use crate::{DeployGasMeter, RuntimeContext, TransferGasMeter, WasmEngine};
 use anyhow::Result;
-use std::cell::RefCell;
-use std::io::Read;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use tracing::error;
+use tracing::info;
 use wasmlette_blockchain::transaction::Address;
 use wasmlette_blockchain::utils::generate_contract_address;
 use wasmlette_blockchain::{State, Transaction, TransactionKind, TransactionReceipt};
 use wasmtime::Linker;
-use tracing::info;
-use tracing::error;
 
 /// Default contract execution gas limit
 const MAX_CONTRACT_FUEL: u64 = 1_000_000;
@@ -34,32 +32,49 @@ impl ContractExecutor {
     /// Execute a transaction
     pub fn execute_transaction(
         &self,
-        state: Rc<RefCell<State>>,
+        state: Arc<Mutex<State>>,
         tx: &Transaction,
     ) -> Result<TransactionReceipt> {
         let tx_hash = tx.hash();
-info!(
-    "[TEST:execute_transaction] tx.hash(): {:?}, tx.sender: {}",
-    tx_hash, tx.sender
-);
+        info!(
+            "[TEST:execute_transaction] tx.hash(): {:?}, tx.sender: {}",
+            tx_hash, tx.sender
+        );
         // Validate transaction
         // Return error if nonce is invalid or insufficient balance
         self.validate_transaction(tx, &state)?;
 
         // Increment nonce
-        state.borrow_mut().increment_nonce(&tx.sender);
+        state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .increment_nonce(&tx.sender);
 
         // Execute based on transaction type
         let result = match &tx.kind {
             TransactionKind::Deploy {
                 wasm_code,
                 init_args,
-            } => self.execute_deploy(state.clone(), &tx.sender, tx.nonce, tx.gas_limit, wasm_code, init_args),
+            } => self.execute_deploy(
+                state.clone(),
+                &tx.sender,
+                tx.nonce,
+                tx.gas_limit,
+                wasm_code,
+                init_args,
+            ),
             TransactionKind::Call {
                 contract,
                 method,
                 args,
-            } => self.execute_call(state.clone(), &tx.sender, contract, tx.gas_limit, method, args),
+            } => self.execute_call(
+                state.clone(),
+                &tx.sender,
+                contract,
+                tx.gas_limit,
+                method,
+                args,
+            ),
             TransactionKind::Transfer { to, amount } => {
                 self.execute_transfer(state.clone(), &tx.sender, to, *amount)
             }
@@ -74,11 +89,15 @@ info!(
                 let gas_refund = GasCalculator::settle_gas(tx.gas_limit, gas_used, tx.gas_price)?;
 
                 state
-                    .borrow_mut()
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
                     .add_balance(tx.sender.clone(), gas_refund.refund);
 
                 {
-                    let caller_balance = state.borrow().get_balance(&tx.sender);
+                    let caller_balance = state
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+                        .get_balance(&tx.sender);
                     info!(
                         "[TEST:execute_transaction] caller_balance after gas refund: {}",
                         caller_balance
@@ -104,7 +123,8 @@ info!(
                 );
 
                 state
-                    .borrow_mut()
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
                     .add_balance(tx.sender.clone(), gas_refund.refund);
 
                 Ok(TransactionReceipt {
@@ -119,9 +139,12 @@ info!(
         }
     }
 
-    fn validate_transaction(&self, tx: &Transaction, state: &Rc<RefCell<State>>) -> Result<()> {
+    fn validate_transaction(&self, tx: &Transaction, state: &Arc<Mutex<State>>) -> Result<()> {
         // Validate nonce
-        let expected_nonce = state.borrow().get_nonce(&tx.sender);
+        let expected_nonce = state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .get_nonce(&tx.sender);
         if tx.nonce != expected_nonce {
             error!(
             "[TEST:execute_transaction] validate_transaction fail, tx.nonce: {} != expected_nonce: {}",
@@ -137,7 +160,10 @@ info!(
 
         // Check balance
         let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
-        let caller_balance = state.borrow().get_balance(&tx.sender);
+        let caller_balance = state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .get_balance(&tx.sender);
         info!(
             "[TEST:execute_transaction] caller_balance: {}, max_gas_cost {}",
             caller_balance, max_gas_cost
@@ -155,11 +181,15 @@ info!(
         }
         // Reserve balance
         state
-            .borrow_mut()
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
             .set_balance(tx.sender.clone(), caller_balance - max_gas_cost);
 
         {
-            let caller_balance = state.borrow().get_balance(&tx.sender);
+            let caller_balance = state
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+                .get_balance(&tx.sender);
             info!(
                 "[TEST:execute_transaction] caller_balance after gas fee: {}",
                 caller_balance
@@ -170,7 +200,7 @@ info!(
 
     fn execute_deploy(
         &self,
-        state: Rc<RefCell<State>>,
+        state: Arc<Mutex<State>>,
         deployer: &Address,
         nonce: u64,
         gas_limit: u64,
@@ -186,15 +216,22 @@ info!(
 
         // Deploy contract
         state
-            .borrow_mut()
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
             .deploy_contract(contract_address, wasm_code.to_vec())?;
 
         let gas_meter = DeployGasMeter::new();
         let mut total_gas_used = gas_meter.operation_cost(wasm_code.len() as u32) as u64;
         info!("[TEST:execute_deploy] deploy gas used: {}", total_gas_used);
         // Try to call init function (it's optional)
-        let init_result =
-            self.execute_call(state, deployer, &contract_address, gas_limit, "init", init_args)?;
+        let init_result = self.execute_call(
+            state,
+            deployer,
+            &contract_address,
+            gas_limit,
+            "init",
+            init_args,
+        )?;
         info!("[TEST:execute_deploy] init gas used: {}", init_result.0);
         total_gas_used += init_result.0;
         info!("[TEST:execute_deploy] total_gas_used: {}", total_gas_used);
@@ -203,7 +240,7 @@ info!(
 
     fn execute_call(
         &self,
-        state: Rc<RefCell<State>>,
+        state: Arc<Mutex<State>>,
         caller: &Address,
         contract: &Address,
         gas_limit: u64,
@@ -215,15 +252,20 @@ info!(
             caller, method
         );
         // Verify contract exists
-        if !state.borrow().contract_exists(contract) {
+        if !state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .contract_exists(contract)
+        {
             anyhow::bail!("Contract not found at address");
         }
 
         // TODO add more reliable check
         let contract_code = state
-            .borrow()
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
             .get_contract(contract)
-            .expect("Contract not found at address.This should never happen")
+            .ok_or_else(|| anyhow::anyhow!("Contract not found at address"))?
             .code
             .clone();
 
@@ -318,12 +360,15 @@ info!(
 
     fn execute_transfer(
         &self,
-        state: Rc<RefCell<State>>,
+        state: Arc<Mutex<State>>,
         from: &Address,
         to: &Address,
         amount: u64,
     ) -> Result<(u64, Vec<u8>, Option<Address>)> {
-        state.borrow_mut().transfer(*from, *to, amount)?;
+        state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
+            .transfer(*from, *to, amount)?;
         Ok((
             TransferGasMeter::new().operation_cost() as u64,
             vec![],
@@ -424,16 +469,17 @@ info!(
 
 impl Default for ContractExecutor {
     fn default() -> Self {
-        Self::new().expect("Failed to create contract executor")
+        Self::new().unwrap_or_else(|_| panic!("Failed to create contract executor"))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Once;
     use wasmlette_blockchain::TransactionKind;
     use wasmlette_tokens::TokenUnit;
-    use std::sync::Once;
+    use std::sync::{Arc, Mutex};
 
     static INIT: Once = Once::new();
 
@@ -454,14 +500,15 @@ mod tests {
     fn test_transfer_execution() {
         init_tracing();
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
         // Give sender some balance
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(1.0));
 
         let tx = Transaction::new(
@@ -480,11 +527,11 @@ mod tests {
         assert!(receipt.success);
         assert_eq!(receipt.gas_used, 11000);
         assert_eq!(
-            state.borrow().get_balance(&from),
+            state.lock().unwrap().get_balance(&from),
             TokenUnit::from_tokens(0.979)
         );
         assert_eq!(
-            state.borrow().get_balance(&to),
+            state.lock().unwrap().get_balance(&to),
             TokenUnit::from_tokens(0.01)
         );
     }
@@ -492,14 +539,15 @@ mod tests {
     #[test]
     fn test_invalid_nonce_returns_error() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
         // Give sender enough balance
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(1.0));
 
         // Expected nonce is 0, but we provide 5
@@ -514,8 +562,8 @@ mod tests {
             1,
         );
 
-        let initial_balance = state.borrow().get_balance(&from);
-        let initial_nonce = state.borrow().get_nonce(&from);
+        let initial_balance = state.lock().unwrap().get_balance(&from);
+        let initial_nonce = state.lock().unwrap().get_nonce(&from);
 
         // Should return Err, not Ok(receipt)
         let result = executor.execute_transaction(state.clone(), &tx);
@@ -525,17 +573,17 @@ mod tests {
 
         // Verify state unchanged
         assert_eq!(
-            state.borrow().get_balance(&from),
+            state.lock().unwrap().get_balance(&from),
             initial_balance,
             "Balance should not change"
         );
         assert_eq!(
-            state.borrow().get_nonce(&from),
+            state.lock().unwrap().get_nonce(&from),
             initial_nonce,
             "Nonce should not increment"
         );
         assert_eq!(
-            state.borrow().get_balance(&to),
+            state.lock().unwrap().get_balance(&to),
             0,
             "Recipient should have no balance"
         );
@@ -544,14 +592,15 @@ mod tests {
     #[test]
     fn test_insufficient_balance_returns_error() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
         // Give sender very small balance (not enough for gas)
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(0.001)); // Only 0.001 tokens
 
         let tx = Transaction::new(
@@ -565,8 +614,8 @@ mod tests {
             1,
         );
 
-        let initial_balance = state.borrow().get_balance(&from);
-        let initial_nonce = state.borrow().get_nonce(&from);
+        let initial_balance = state.lock().unwrap().get_balance(&from);
+        let initial_nonce = state.lock().unwrap().get_nonce(&from);
 
         // Should return Err for insufficient balance
         let result = executor.execute_transaction(state.clone(), &tx);
@@ -579,12 +628,12 @@ mod tests {
 
         // Verify state unchanged
         assert_eq!(
-            state.borrow().get_balance(&from),
+            state.lock().unwrap().get_balance(&from),
             initial_balance,
             "Balance should not change"
         );
         assert_eq!(
-            state.borrow().get_nonce(&from),
+            state.lock().unwrap().get_nonce(&from),
             initial_nonce,
             "Nonce should not increment"
         );
@@ -593,14 +642,15 @@ mod tests {
     #[test]
     fn test_valid_transaction_failed_execution() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         let to = Address::from_slice(&[2u8; Address::LENGTH]);
 
         // Give sender enough balance for gas but NOT for transfer amount
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(0.2)); // 200,000 micro-tokens
 
         let tx = Transaction::new(
@@ -614,7 +664,7 @@ mod tests {
             1,
         );
 
-        let initial_nonce = state.borrow().get_nonce(&from);
+        let initial_nonce = state.lock().unwrap().get_nonce(&from);
 
         // Should return Ok(receipt) with success=false
         let result = executor.execute_transaction(state.clone(), &tx);
@@ -628,14 +678,14 @@ mod tests {
 
         // Nonce SHOULD be incremented (transaction was valid)
         assert_eq!(
-            state.borrow().get_nonce(&from),
+            state.lock().unwrap().get_nonce(&from),
             initial_nonce + 1,
             "Nonce should increment for valid tx even if execution fails"
         );
 
         // Recipient should have no balance
         assert_eq!(
-            state.borrow().get_balance(&to),
+            state.lock().unwrap().get_balance(&to),
             0,
             "Transfer should not happen"
         );
@@ -644,13 +694,14 @@ mod tests {
     #[test]
     fn test_validate_transaction_success() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
 
         // Give sufficient balance
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(1.0));
 
         let tx = Transaction::new(
@@ -672,11 +723,12 @@ mod tests {
     #[test]
     fn test_validate_transaction_wrong_nonce() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(1.0));
 
         let tx = Transaction::new(
@@ -698,11 +750,12 @@ mod tests {
     #[test]
     fn test_validate_transaction_insufficient_balance() {
         let executor = ContractExecutor::new().unwrap();
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
 
         let from = Address::from_slice(&[1u8; Address::LENGTH]);
         state
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_balance(from, TokenUnit::from_tokens(0.0001)); // Very low
 
         let tx = Transaction::new(
@@ -731,7 +784,7 @@ mod tests {
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             gas_remaining: 1_000_000,
         };
         let mut store = engine.create_store(context);
@@ -768,7 +821,7 @@ mod tests {
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             gas_remaining: 1_000_000,
         };
         let mut store = engine.create_store(context);
@@ -804,7 +857,7 @@ mod tests {
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             gas_remaining: 1_000_000,
         };
         let mut store = engine.create_store(context);
@@ -852,7 +905,7 @@ mod tests {
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             gas_remaining: 1_000_000,
         };
         let mut store = engine.create_store(context);
@@ -906,7 +959,7 @@ mod tests {
         let context = RuntimeContext {
             caller_address: Address::zero(),
             contract_address: Address::zero(),
-            state: Rc::new(RefCell::new(State::new())),
+            state: Arc::new(Mutex::new(State::new())),
             gas_remaining: 1_000_000,
         };
         let mut store = engine.create_store(context);

@@ -1,16 +1,14 @@
 //! Blockchain management and validation
 
 use crate::{Block, BlockBuilder, BlockchainError, State};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
-use thiserror::Error;
+use std::sync::{Arc, Mutex};
 
 //  _room_state: std::marker::PhantomData<RoomState>,
 
 pub struct BlockchainManager {
     /// Shared state
-    state: Rc<RefCell<State>>,
+    state: Arc<Mutex<State>>,
 
     /// All blocks indexed by number
     blocks: HashMap<u64, Block>,
@@ -22,7 +20,7 @@ pub struct BlockchainManager {
 impl BlockchainManager {
     /// Create a new blockchain manager and init with genesis block
     /// TODO genesis block should contain predefined state with balances
-    pub fn new(state: Rc<RefCell<State>>) -> Result<Self, BlockchainError> {
+    pub fn new(state: Arc<Mutex<State>>) -> Result<Self, BlockchainError> {
         let mut init = Self {
             state,
             blocks: HashMap::new(),
@@ -38,9 +36,13 @@ impl BlockchainManager {
             return Err(BlockchainError::GenesisAlreadyExists);
         }
 
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| BlockchainError::BlockGenerationError)?;
         let genesis = BlockBuilder::genesis()
-            .build(&self.state.borrow())
-            .map_err(|e| BlockchainError::BlockGenerationError)?;
+            .build(&state)
+            .map_err(|_| BlockchainError::BlockGenerationError)?;
         self.blocks.insert(0, genesis.clone());
         self.head = Some(genesis.clone());
         Ok(())
@@ -120,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_initialize_genesis() {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let mut chain = BlockchainManager::new(state).unwrap();
 
         let genesis = chain.head.as_ref().unwrap();
@@ -130,18 +132,18 @@ mod tests {
 
     #[test]
     fn test_add_valid_blocks() {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let mut chain = BlockchainManager::new(state.clone()).unwrap();
 
         let genesis = chain.head.clone().unwrap();
 
         let block1 = BlockBuilder::with_parent(&genesis)
-            .build(&state.borrow())
+            .build(&state.lock().unwrap())
             .unwrap();
         chain.add_block(block1.clone()).unwrap();
 
         let block2 = BlockBuilder::with_parent(&block1)
-            .build(&state.borrow())
+            .build(&state.lock().unwrap())
             .unwrap();
         chain.add_block(block2).unwrap();
 
@@ -150,14 +152,14 @@ mod tests {
 
     #[test]
     fn test_invalid_parent_hash() {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let mut chain = BlockchainManager::new(state.clone()).unwrap();
 
         let genesis = chain.head.clone().unwrap();
 
         // Create block with wrong parent hash
         let mut block = BlockBuilder::with_parent(&genesis)
-            .build(&state.borrow())
+            .build(&state.lock().unwrap())
             .unwrap();
         block.parent_hash = [1u8; 32]; // Wrong!
 
@@ -167,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_skip_block_number() {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let mut chain = BlockchainManager::new(state.clone()).unwrap();
 
         // Try to add block 2 without block 1
@@ -180,12 +182,12 @@ mod tests {
 
     #[test]
     fn test_get_blocks() {
-        let state = Rc::new(RefCell::new(State::new()));
+        let state = Arc::new(Mutex::new(State::new()));
         let mut chain = BlockchainManager::new(state.clone()).unwrap();
 
         let genesis = chain.head.clone().unwrap();
         let block1 = BlockBuilder::with_parent(&genesis)
-            .build(&state.borrow())
+            .build(&state.lock().unwrap())
             .unwrap();
         chain.add_block(block1).unwrap();
 
