@@ -57,6 +57,12 @@ impl StoreGasMeter {
     }
 }
 
+impl Default for StoreGasMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DeployGasMeter {
     minimal_operation_cost: u32,
@@ -74,6 +80,12 @@ impl DeployGasMeter {
     }
     pub fn operation_cost(&self, bytecode_len: u32) -> u32 {
         self.minimal_operation_cost + bytecode_len * self.bytecode_cost_per_byte
+    }
+}
+
+impl Default for DeployGasMeter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -95,6 +107,12 @@ impl GetBalanceGasMeter {
     }
 }
 
+impl Default for GetBalanceGasMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TransferGasMeter {
     pub operation_cost: u32,
@@ -108,6 +126,12 @@ impl TransferGasMeter {
     }
     pub fn operation_cost(&self) -> u32 {
         self.operation_cost
+    }
+}
+
+impl Default for TransferGasMeter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -131,6 +155,11 @@ impl HashGasMeter {
     }
 }
 
+impl Default for HashGasMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

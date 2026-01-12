@@ -6,9 +6,8 @@ pub const ADDRESS_LENGTH: usize = Address::LENGTH;
 
 /// Storage API
 pub mod storage {
-    //! Safe Rust API for contract development
-
     use crate::api::{get_storage, set_storage};
+    /// Safe Rust API for contract development
 
     /// Read value from contract storage
     ///

@@ -13,9 +13,6 @@ use wasmlette_blockchain::utils::generate_contract_address;
 use wasmlette_blockchain::{State, Transaction, TransactionKind, TransactionReceipt};
 use wasmtime::Linker;
 
-/// Default contract execution gas limit
-const MAX_CONTRACT_FUEL: u64 = 1_000_000;
-
 /// Contract executor
 pub struct ContractExecutor {
     engine: WasmEngine,
@@ -91,7 +88,7 @@ impl ContractExecutor {
                 state
                     .lock()
                     .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
-                    .add_balance(tx.sender.clone(), gas_refund.refund);
+                    .add_balance(tx.sender, gas_refund.refund);
 
                 {
                     let caller_balance = state
@@ -125,7 +122,7 @@ impl ContractExecutor {
                 state
                     .lock()
                     .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
-                    .add_balance(tx.sender.clone(), gas_refund.refund);
+                    .add_balance(tx.sender, gas_refund.refund);
 
                 Ok(TransactionReceipt {
                     tx_hash,
@@ -150,13 +147,13 @@ impl ContractExecutor {
             "[TEST:execute_transaction] validate_transaction fail, tx.nonce: {} != expected_nonce: {}",
             tx.nonce, expected_nonce
             );
-            return anyhow::bail!(
+            anyhow::bail!(
                 "Invalid nonce: expected {}, got {}",
                 expected_nonce,
                 tx.nonce
             );
         }
-        //TODO validate signature
+        // TODO validate signature
 
         // Check balance
         let max_gas_cost = GasCalculator::max_cost(tx.gas_limit, tx.gas_price)?;
@@ -173,7 +170,7 @@ impl ContractExecutor {
                 "[TEST:execute_transaction] validate_transaction fail, caller_balance: {} < max_gas_cost: {}",
             caller_balance, max_gas_cost
             );
-            return anyhow::bail!(
+            anyhow::bail!(
                 "Insufficient balance: expected {}, got {}",
                 max_gas_cost,
                 caller_balance
@@ -183,7 +180,7 @@ impl ContractExecutor {
         state
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?
-            .set_balance(tx.sender.clone(), caller_balance - max_gas_cost);
+            .set_balance(tx.sender, caller_balance - max_gas_cost);
 
         {
             let caller_balance = state
@@ -271,8 +268,8 @@ impl ContractExecutor {
 
         // Create context
         let context = RuntimeContext {
-            caller_address: caller.clone(),
-            contract_address: contract.clone(),
+            caller_address: *caller,
+            contract_address: *contract,
             state: state.clone(),
             gas_remaining: gas_limit,
         };
@@ -382,7 +379,7 @@ impl ContractExecutor {
     ///
     /// Strategy:
     /// - i32: Check remaining bytes. If ≥20 (and not exactly 4), treat as an address pointer.
-    ///        Write an address to memory and return a pointer. Otherwise, parse as regular i32.
+    ///   Write an address to memory and return a pointer. Otherwise, parse as regular i32.
     /// - i64: Always parse as 8-byte number
     fn parse_args(
         &self,

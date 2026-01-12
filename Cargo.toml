@@ -2,11 +2,9 @@
 members = [
     "crates/blockchain",
     "crates/runtime",
-    "crates/storage",
     "crates/tokens",
     "crates/contracts-sdk",
     "crates/contracts-sdk-macros",
-    "crates/networking",
     "crates/node",
     "crates/contracts-sdk/examples/counter",
     "crates/contracts-sdk/examples/tester",
@@ -20,11 +18,9 @@ members = [
 default-members = [
     "crates/blockchain",
     "crates/runtime",
-    "crates/storage",
     "crates/tokens",
     "crates/contracts-sdk",
     "crates/contracts-sdk-macros",
-    "crates/networking",
     "crates/node",
     "demon",
 ]

@@ -124,12 +124,12 @@ fn register_storage_functions(linker: &mut Linker<RuntimeContext>) -> Result<()>
             }
 
             // Write value to WASM memory
-            if let Err(_) = crate::memory::MemoryHelper::write_bytes(
+            if crate::memory::MemoryHelper::write_bytes(
                 &mut caller,
                 &memory,
                 output_ptr as u32,
                 &value,
-            ) {
+            ).is_err() {
                 return -1;
             }
             // Return actual length written

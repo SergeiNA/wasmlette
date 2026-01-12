@@ -138,7 +138,7 @@ impl WasmletteNode {
             .state
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire state lock: {}", e))?;
-        let block = builder.build(&*state)?;
+        let block = builder.build(&state)?;
 
         // Add block to chain
         self.chain.add_block(block)?;

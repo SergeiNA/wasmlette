@@ -78,6 +78,12 @@ impl<'a> BlockBuilder<'a> {
     }
 }
 
+impl<'a> Default for BlockBuilder<'a> {
+    fn default() -> Self {
+        BlockBuilder::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
